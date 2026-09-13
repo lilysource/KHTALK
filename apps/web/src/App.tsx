@@ -34,8 +34,8 @@ function BrandMark({ small = false }: { small?: boolean }) {
   return <div className={`brand-mark ${small ? 'small' : ''}`} aria-label="KHTALK">K</div>
 }
 
-function Avatar({ member, size = 'regular' }: { member: { avatar: string; color: string }; size?: string }) {
-  return <div className={`avatar ${member.color} ${size}`}>{member.avatar}</div>
+function Avatar({ member, size = 'regular' }: { member: { avatar: string; color: string; avatarUrl?: string }; size?: string }) {
+  return <div className={`avatar ${member.color} ${size}`}>{member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : member.avatar}</div>
 }
 
 function App() {
@@ -56,12 +56,6 @@ function App() {
   const [channelToDelete, setChannelToDelete] = useState<string | null>(null)
   const [showChannelModal, setShowChannelModal] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
-  const [showProfileEditor, setShowProfileEditor] = useState(false)
-  const [profileName, setProfileName] = useState('')
-  const [profileUsername, setProfileUsername] = useState('')
-  const [profileBio, setProfileBio] = useState('')
-  const [profileError, setProfileError] = useState<string | null>(null)
-  const [profileSaving, setProfileSaving] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [privateChannels, setPrivateChannels] = useState<string[]>([])
   const [privateVoiceChannels, setPrivateVoiceChannels] = useState<string[]>([])
@@ -108,37 +102,6 @@ function App() {
     setShowUserMenu(false)
   }
 
-  function openProfileEditor() {
-    setProfileName(currentUser?.displayName || '')
-    setProfileUsername(currentUser?.username || '')
-    setProfileBio(currentUser?.bio || '')
-    setProfileError(null)
-    setShowUserMenu(false)
-    setShowProfileEditor(true)
-  }
-
-  async function saveProfile() {
-    const displayName = profileName.trim()
-    const username = profileUsername.trim().toLowerCase().replace(/[^a-z0-9_]/g, '')
-    if (!displayName || !username) {
-      setProfileError('Name and username are required.')
-      return
-    }
-    const supabase = getSupabaseClient()
-    if (!supabase || !currentUser) return
-    setProfileSaving(true)
-    setProfileError(null)
-    const { data, error } = await supabase.auth.updateUser({
-      data: { display_name: displayName, username, bio: profileBio.trim() }
-    })
-    if (error) {
-      setProfileError(error.message)
-    } else if (data.user) {
-      setCurrentUser(mapSupabaseUserToProfile(data.user))
-      setShowProfileEditor(false)
-    }
-    setProfileSaving(false)
-  }
 
   const allMessages = sentMessages
   function sendMessage() {
@@ -334,7 +297,7 @@ function App() {
           {showUserMenu && (
             <div className="user-profile-popover" onClick={(e) => e.stopPropagation()}>
               <div className="popover-header">
-                <Avatar member={{ avatar: currentUser.avatar, color: currentUser.color }} size="small" />
+                <Avatar member={{ avatar: currentUser.avatar, color: currentUser.color, avatarUrl: currentUser.avatarUrl }} size="small" />
                 <div className="popover-info">
                   <strong>{currentUser.displayName}</strong>
                   <span>@{currentUser.username}</span>
@@ -361,10 +324,6 @@ function App() {
               ))}
 
               <div className="popover-divider" />
-              <button type="button" className="profile-edit-btn" onClick={openProfileEditor}>
-                <Pencil size={15} />
-                <span>Edit profile</span>
-              </button>
               <button type="button" className="logout-btn" onClick={handleSignOut}>
                 <LogOut size={15} />
                 <span>Log Out</span>
@@ -381,7 +340,7 @@ function App() {
             title="User Profile & Settings"
           >
             <div className="presence-wrap">
-              <Avatar member={{ avatar: currentUser.avatar, color: currentUser.color }} size="small" />
+              <Avatar member={{ avatar: currentUser.avatar, color: currentUser.color, avatarUrl: currentUser.avatarUrl }} size="small" />
               <span
                 className={`presence-dot ${
                   currentUser.status === 'Online'
@@ -504,20 +463,6 @@ function App() {
           setName={setCommunityName}
           onClose={() => setShowCommunityModal(false)}
           onCreate={createCommunity}
-        />
-      )}
-      {showProfileEditor && (
-        <ProfileEditModal
-          name={profileName}
-          username={profileUsername}
-          bio={profileBio}
-          error={profileError}
-          saving={profileSaving}
-          setName={setProfileName}
-          setUsername={setProfileUsername}
-          setBio={setProfileBio}
-          onClose={() => setShowProfileEditor(false)}
-          onSave={saveProfile}
         />
       )}
       {showSettings && (
@@ -684,12 +629,16 @@ function SettingsPage({
   onClose,
   onUserUpdated
 }: {
-  user: { displayName: string; username: string; email: string; bio?: string }
+  user: { displayName: string; username: string; email: string; bio?: string; avatarUrl?: string }
   onClose: () => void
   onUserUpdated: (user: User) => void
 }) {
   const [section, setSection] = useState('account')
   const [email, setEmail] = useState(user.email)
+  const [displayName, setDisplayName] = useState(user.displayName)
+  const [username, setUsername] = useState(user.username)
+  const [bio, setBio] = useState(user.bio || '')
+  const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl || '')
   const [password, setPassword] = useState('')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -722,6 +671,42 @@ function SettingsPage({
     else if (data.user) {
       onUserUpdated(data.user)
       setMessage('A confirmation link was sent to your new email address.')
+    }
+    setSaving(false)
+  }
+
+  function chooseAvatar(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setError('Choose an image file.')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setError('Profile images must be smaller than 2 MB.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => setAvatarUrl(String(reader.result))
+    reader.readAsDataURL(file)
+  }
+
+  async function updateProfile() {
+    if (!supabase || !displayName.trim() || !username.trim()) {
+      setError('Display name and username are required.')
+      return
+    }
+    setSaving(true)
+    clearFeedback()
+    const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '')
+    const { data, error: updateError } = await supabase.auth.updateUser({
+      data: { display_name: displayName.trim(), username: cleanUsername, bio: bio.trim(), avatar_url: avatarUrl }
+    })
+    if (updateError) setError(updateError.message)
+    else if (data.user) {
+      onUserUpdated(data.user)
+      setUsername(cleanUsername)
+      setMessage('Profile updated successfully.')
     }
     setSaving(false)
   }
@@ -812,8 +797,15 @@ function SettingsPage({
         {error && <div className="settings-error">{error}</div>}
 
         {section === 'account' && <>
-          <SettingsCard icon={<UserRound size={18} />} title="Account information" description="Manage the details connected to your KHTALK account.">
-            <div className="settings-user-summary"><Avatar member={{ avatar: user.displayName.charAt(0).toUpperCase(), color: 'blue' }} /><div><strong>{user.displayName}</strong><span>@{user.username}</span></div></div>
+          <SettingsCard icon={<UserRound size={18} />} title="Profile" description="Customize your name, profile image, and bio.">
+            <div className="settings-user-summary"><Avatar member={{ avatar: displayName.charAt(0).toUpperCase(), color: 'blue', avatarUrl }} /><div><strong>{displayName}</strong><span>@{username}</span></div></div>
+            <label className="settings-avatar-upload"><span>Profile image</span><input type="file" accept="image/*" onChange={chooseAvatar} /><small>Choose an image up to 2 MB</small></label>
+            <label className="settings-field">Display name<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={50} /></label>
+            <label className="settings-field">Username<input value={username} onChange={(event) => setUsername(event.target.value)} maxLength={30} /></label>
+            <label className="settings-field">Bio<textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength={160} placeholder="Tell people a little about yourself" /></label>
+            <button className="settings-action" disabled={saving} onClick={updateProfile}><Pencil size={15} /> Save profile</button>
+          </SettingsCard>
+          <SettingsCard icon={<Mail size={18} />} title="Account information" description="Manage the details connected to your KHTALK account.">
             <label className="settings-field">Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
             <button className="settings-action" disabled={saving || email === user.email} onClick={updateEmail}><Mail size={15} /> Change email</button>
           </SettingsCard>
@@ -890,60 +882,6 @@ function CreateCommunityModal({
         <button className="primary-button" disabled={loading || !name.trim()} onClick={onCreate}>
           {loading ? 'Creating...' : 'Create community'} <ChevronRight size={16} />
         </button>
-      </section>
-    </div>
-  )
-}
-
-function ProfileEditModal({
-  name,
-  username,
-  bio,
-  error,
-  saving,
-  setName,
-  setUsername,
-  setBio,
-  onClose,
-  onSave
-}: {
-  name: string
-  username: string
-  bio: string
-  error: string | null
-  saving: boolean
-  setName: (value: string) => void
-  setUsername: (value: string) => void
-  setBio: (value: string) => void
-  onClose: () => void
-  onSave: () => void
-}) {
-  return (
-    <div className="modal-backdrop">
-      <section className="dialog profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-title">
-        <button className="dialog-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        <div className="dialog-icon"><Pencil size={20} /></div>
-        <h2 id="profile-title">Edit profile</h2>
-        <p>Update how people see you in KHTALK.</p>
-        <label>
-          Display name
-          <input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={50} />
-        </label>
-        <label>
-          Username
-          <input value={username} onChange={(event) => setUsername(event.target.value)} maxLength={30} />
-        </label>
-        <label>
-          Bio
-          <textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength={160} placeholder="Tell people a little about yourself" />
-        </label>
-        {error && <div className="modal-error" role="alert">{error}</div>}
-        <div className="dialog-actions">
-          <button className="secondary-button" onClick={onClose}>Cancel</button>
-          <button className="primary-button profile-save-button" disabled={saving} onClick={onSave}>
-            {saving ? 'Saving...' : 'Save profile'}
-          </button>
-        </div>
       </section>
     </div>
   )

@@ -6,6 +6,7 @@ export interface UserProfile {
   displayName: string
   username: string
   bio?: string
+  avatarUrl?: string
   avatar: string
   color: string
   status: UserStatus
