@@ -82,6 +82,15 @@
 .community-art { width: 62px; height: 62px; display: grid; place-items: center; border-radius: 18px; background: linear-gradient(145deg, #1b8bff, #1557c9); box-shadow: 0 12px 26px rgba(16, 126, 246, .3); }
 .community-art .brand-mark { width: 44px; height: 44px; border-radius: 13px; font-size: 25px; box-shadow: none; }
 .modal-error { margin-top: 12px; padding: 9px 10px; border: 1px solid rgba(244, 63, 94, .4); border-radius: 7px; background: rgba(225, 29, 72, .12); color: #fda4af; font-size: 11px; line-height: 1.4; }
+.empty-community-sidebar { display: flex; flex-direction: column; gap: 7px; padding: 24px 10px; color: #7894b8; font-size: 11px; line-height: 1.45; }
+.empty-community-sidebar strong { color: #dceaff; font-size: 12px; }
+.empty-community-sidebar button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; margin-top: 7px; border-radius: 7px; background: #126bce; color: #fff; font-size: 11px; font-weight: 700; }
+.empty-community-main { display: grid; place-items: center; }
+.empty-community-content { width: min(360px, 100%); padding: 24px; text-align: center; }
+.empty-community-content .community-art { margin: 0 auto 18px; }
+.empty-community-content h2 { margin: 0 0 8px; font: 700 24px 'Space Grotesk'; color: #f2f7ff; }
+.empty-community-content p { margin: 0; color: #8da8c9; font-size: 12px; line-height: 1.5; }
+.empty-community-content .primary-button { width: min(230px, 100%); margin: 20px auto 0; }
 .link-accent { background: transparent; color: #3aa8ff; font-weight: 600; padding: 0; font-size: inherit; }
 .link-accent:hover { text-decoration: underline; }
 

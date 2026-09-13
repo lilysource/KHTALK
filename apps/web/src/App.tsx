@@ -245,17 +245,26 @@ function App() {
 
       <aside className={`channel-sidebar ${mobilePanel === 'channels' ? 'mobile-open' : ''}`}>
         <div className="server-heading">
-          <span>{community?.name || 'Your communities'}</span>
+          <span>{community?.name || 'No community'}</span>
           <ChevronDown size={16} />
         </div>
         <div className="channel-scroll">
-          <div className="channel-category">
+          {!community && (
+            <div className="empty-community-sidebar">
+              <strong>No community yet</strong>
+              <span>Use the plus button to create one.</span>
+              <button type="button" onClick={() => { setCommunityError(null); setShowCommunityModal(true) }}>
+                Create community <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+          {community && <div className="channel-category">
             <span>TEXT CHANNELS</span>
             <button aria-label="Create private channel" onClick={() => requestPrivateChannel('text')}>
               <Plus size={14} />
             </button>
-          </div>
-          {['general', ...privateChannels]
+          </div>}
+          {community && ['general', ...privateChannels]
             .filter((channel) => !removedChannels.includes(channel))
             .map((channel) => (
               <ChannelRow
@@ -273,13 +282,13 @@ function App() {
                 }}
               />
             ))}
-          <div className="channel-category space-top">
+          {community && <div className="channel-category space-top">
             <span>VOICE CHANNELS</span>
             <button aria-label="Create private voice channel" onClick={() => requestPrivateChannel('voice')}>
               <Plus size={14} />
             </button>
-          </div>
-          {['General', ...privateVoiceChannels].map((channel) => (
+          </div>}
+          {community && ['General', ...privateVoiceChannels].map((channel) => (
             <div className="voice-row" key={channel}>
               <Volume2 size={15} />
               <span>{channel}</span>
@@ -362,10 +371,10 @@ function App() {
       <main className="chat-panel">
         <div className="chat-header">
           <div className="channel-title">
-            <Hash size={21} />
+            {community && <Hash size={21} />}
             <div>
-              <h1>{activeChannel}</h1>
-              <span>Share ideas, updates, and good energy.</span>
+              <h1>{community ? activeChannel : 'Create your first community'}</h1>
+              <span>{community ? 'Share ideas, updates, and good energy.' : 'Your channels will appear here after setup.'}</span>
             </div>
           </div>
           <div className="header-actions">
@@ -383,7 +392,18 @@ function App() {
           </div>
         </div>
 
-        <div className="message-area">
+        <div className={`message-area ${!community ? 'empty-community-main' : ''}`}>
+          {!community ? (
+            <div className="empty-community-content">
+              <div className="community-art" aria-hidden="true"><BrandMark small /></div>
+              <h2>No community yet</h2>
+              <p>Create a community to get your general text channel and General voice channel.</p>
+              <button className="primary-button" onClick={() => { setCommunityError(null); setShowCommunityModal(true) }}>
+                Create community <ChevronRight size={16} />
+              </button>
+            </div>
+          ) : (
+            <>
           <div className="welcome-block">
             <div className="welcome-icon"><Hash size={26} /></div>
             <h2>Welcome to #{activeChannel}</h2>
@@ -392,9 +412,11 @@ function App() {
           {allMessages.map((message) => (
             <MessageRow key={message.id} message={message} />
           ))}
+            </>
+          )}
         </div>
 
-        <div className="composer-wrap">
+        {community && <div className="composer-wrap">
           <div className="composer">
             <button className="composer-action" aria-label="Add attachment"><Plus size={20} /></button>
             <input
@@ -409,7 +431,7 @@ function App() {
             <button className="send-button" onClick={sendMessage} aria-label="Send message"><Send size={17} /></button>
           </div>
           <div className="composer-hint">Press <kbd>Enter</kbd> to send <span>•</span> <kbd>Shift + Enter</kbd> for a new line</div>
-        </div>
+        </div>}
       </main>
 
       <aside className={`members-panel ${mobilePanel === 'members' ? 'mobile-open' : ''}`}>
@@ -417,7 +439,7 @@ function App() {
           <strong>Members</strong>
           <button className="icon-button" onClick={() => setMobilePanel(null)} aria-label="Close members"><X size={18} /></button>
         </div>
-          <MemberGroup title="ONLINE" members={memberList} />
+          {community && <MemberGroup title="ONLINE" members={memberList} />}
       </aside>
 
       {mobilePanel && <button className="mobile-backdrop" onClick={() => setMobilePanel(null)} aria-label="Close menu" />}
