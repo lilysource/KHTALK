@@ -28,30 +28,6 @@ type Community = {
   iconUrl: string
 }
 
-const initialMessages: Message[] = [
-  { id: 1, name: 'Makara', time: 'Today at 8:12 AM', avatar: 'M', color: 'coral', text: 'Hello everyone! 👋\nHow are you today?' },
-  { id: 2, name: 'SovanTech', time: 'Today at 8:14 AM', avatar: 'S', color: 'cyan', text: "I'm good bro. Just finished coding my website. 😄\nStill working on the UI." },
-  { id: 3, name: 'Nara', time: 'Today at 8:16 AM', avatar: 'N', color: 'cream', text: "Wow! That's awesome. Can you share it later?\nI'm also working on a new project. 😄" },
-  { id: 4, name: 'SovanTech', time: 'Today at 8:17 AM', avatar: 'S', color: 'cyan', attachment: 'website-demo.zip' },
-  { id: 5, name: 'Makara', time: 'Today at 8:18 AM', avatar: 'M', color: 'coral', text: 'Nice! I’ll check it out. 👍\nBy the way, does anyone play Roblox here?' },
-  { id: 6, name: 'Pov', time: 'Today at 8:20 AM', avatar: 'P', color: 'violet', text: "Yeah! I play sometimes. What's your username?" },
-  { id: 7, name: 'Makara', time: 'Today at 8:21 AM', avatar: 'M', color: 'coral', text: 'My username is MakaraKH\nAdd me if you want. 🙂' },
-  { id: 8, name: 'Pov', time: 'Today at 8:22 AM', avatar: 'P', color: 'violet', text: "Sure! I'll add you later.", reactions: ['👍 1'] }
-]
-
-const members = [
-  { name: 'Makara', status: 'Online', avatar: 'M', color: 'coral' },
-  { name: 'SovanTech', status: 'Playing Visual Studio Code', avatar: 'S', color: 'cyan' },
-  { name: 'Nara', status: 'Online', avatar: 'N', color: 'cream' },
-  { name: 'Pov', status: 'Playing Roblox', avatar: 'P', color: 'violet' },
-  { name: 'Rith', status: 'Online', avatar: 'R', color: 'mint' },
-  { name: 'Sokha', status: 'Listening to Spotify', avatar: 'S', color: 'teal' },
-  { name: 'Dara', status: 'Online', avatar: 'D', color: 'peach' },
-  { name: 'Vanda', status: 'Online', avatar: 'V', color: 'sky' },
-  { name: 'Chantrea', status: 'Playing Minecraft', avatar: 'C', color: 'gold' },
-  { name: 'Tola', status: 'Online', avatar: 'T', color: 'ice' }
-]
-
 function BrandMark({ small = false }: { small?: boolean }) {
   return <div className={`brand-mark ${small ? 'small' : ''}`} aria-label="KHTALK">K</div>
 }
@@ -123,8 +99,7 @@ function App() {
     setShowUserMenu(false)
   }
 
-  const allMessages = [...initialMessages, ...sentMessages]
-
+  const allMessages = sentMessages
   function sendMessage() {
     const text = draft.trim()
     if (!text) return
@@ -217,6 +192,13 @@ function App() {
     return <AuthPage />
   }
 
+  const memberList = [{
+    name: currentUser.displayName,
+    status: currentUser.status,
+    avatar: currentUser.avatar,
+    color: currentUser.color
+  }]
+
   return (
     <div
       className="app-shell"
@@ -273,37 +255,12 @@ function App() {
               <Plus size={14} />
             </button>
           </div>
-          {['general', 'announcements', 'rules', 'bot-commands']
+          {['general', ...privateChannels]
             .filter((channel) => !removedChannels.includes(channel))
             .map((channel) => (
               <ChannelRow
                 key={channel}
                 name={channel}
-                active={activeChannel === channel}
-                onContextMenu={(event) => {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  setChannelMenu({ name: channel, x: event.clientX, y: event.clientY })
-                }}
-                onClick={() => {
-                  setActiveChannel(channel)
-                  setMobilePanel(null)
-                }}
-              />
-            ))}
-          <div className="channel-category space-top">
-            <span>COMMUNITY</span>
-            <button aria-label="Create channel" onClick={() => requestPrivateChannel('text')}>
-              <Plus size={14} />
-            </button>
-          </div>
-          {['gaming', 'technology', 'school', 'off-topic', ...privateChannels]
-            .filter((channel) => !removedChannels.includes(channel))
-            .map((channel) => (
-              <ChannelRow
-                key={channel}
-                name={channel}
-                privateChannel={privateChannels.includes(channel)}
                 active={activeChannel === channel}
                 onContextMenu={(event) => {
                   event.preventDefault()
@@ -322,7 +279,7 @@ function App() {
               <Plus size={14} />
             </button>
           </div>
-          {['General', 'Gaming', 'Music', ...privateVoiceChannels].map((channel) => (
+          {['General', ...privateVoiceChannels].map((channel) => (
             <div className="voice-row" key={channel}>
               <Volume2 size={15} />
               <span>{channel}</span>
@@ -435,10 +392,6 @@ function App() {
           {allMessages.map((message) => (
             <MessageRow key={message.id} message={message} />
           ))}
-          <div className="typing">
-            <span className="typing-dots"><i /><i /><i /></span>
-            <strong>SovanTech</strong> is typing...
-          </div>
         </div>
 
         <div className="composer-wrap">
@@ -464,12 +417,7 @@ function App() {
           <strong>Members</strong>
           <button className="icon-button" onClick={() => setMobilePanel(null)} aria-label="Close members"><X size={18} /></button>
         </div>
-        <MemberGroup title="ONLINE — 24" members={members} />
-        <MemberGroup
-          title="OFFLINE — 54"
-          members={[{ name: 'Kim', status: 'Last seen 2 hours ago', avatar: 'K', color: 'slate' }]}
-          offline
-        />
+          <MemberGroup title="ONLINE" members={memberList} />
       </aside>
 
       {mobilePanel && <button className="mobile-backdrop" onClick={() => setMobilePanel(null)} aria-label="Close menu" />}

@@ -65,8 +65,8 @@ app.post('/api/servers', { preHandler: authenticate }, async (request, reply) =>
         members: { create: { userId: request.user!.id } },
         channels: {
           create: [
-            { name: 'general', topic: 'Welcome to your new community' },
-            { name: 'announcements', topic: 'Important community updates' }
+            { name: 'general', topic: 'Welcome to your new community', type: 'TEXT' },
+            { name: 'General', topic: 'Community voice chat', type: 'VOICE', position: 1 }
           ]
         }
       },
