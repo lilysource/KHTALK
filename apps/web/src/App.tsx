@@ -245,19 +245,9 @@ function App() {
 
       <aside className={`channel-sidebar ${mobilePanel === 'channels' ? 'mobile-open' : ''}`}>
         <div className="server-heading">
-          <span>{community?.name || 'No community'}</span>
-          <ChevronDown size={16} />
+          {community && <><span>{community.name}</span><ChevronDown size={16} /></>}
         </div>
         <div className="channel-scroll">
-          {!community && (
-            <div className="empty-community-sidebar">
-              <strong>No community yet</strong>
-              <span>Use the plus button to create one.</span>
-              <button type="button" onClick={() => { setCommunityError(null); setShowCommunityModal(true) }}>
-                Create community <ChevronRight size={14} />
-              </button>
-            </div>
-          )}
           {community && <div className="channel-category">
             <span>TEXT CHANNELS</span>
             <button aria-label="Create private channel" onClick={() => requestPrivateChannel('text')}>
@@ -373,8 +363,7 @@ function App() {
           <div className="channel-title">
             {community && <Hash size={21} />}
             <div>
-              <h1>{community ? activeChannel : 'Create your first community'}</h1>
-              <span>{community ? 'Share ideas, updates, and good energy.' : 'Your channels will appear here after setup.'}</span>
+              {community && <><h1>{activeChannel}</h1><span>Share ideas, updates, and good energy.</span></>}
             </div>
           </div>
           <div className="header-actions">
@@ -393,16 +382,7 @@ function App() {
         </div>
 
         <div className={`message-area ${!community ? 'empty-community-main' : ''}`}>
-          {!community ? (
-            <div className="empty-community-content">
-              <div className="community-art" aria-hidden="true"><BrandMark small /></div>
-              <h2>No community yet</h2>
-              <p>Create a community to get your general text channel and General voice channel.</p>
-              <button className="primary-button" onClick={() => { setCommunityError(null); setShowCommunityModal(true) }}>
-                Create community <ChevronRight size={16} />
-              </button>
-            </div>
-          ) : (
+          {community ? (
             <>
           <div className="welcome-block">
             <div className="welcome-icon"><Hash size={26} /></div>
@@ -413,7 +393,7 @@ function App() {
             <MessageRow key={message.id} message={message} />
           ))}
             </>
-          )}
+          ) : null}
         </div>
 
         {community && <div className="composer-wrap">
