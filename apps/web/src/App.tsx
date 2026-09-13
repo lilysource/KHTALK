@@ -28,6 +28,7 @@ type Community = {
   name: string
   slug: string
   iconUrl: string
+  backgroundUrl?: string | null
 }
 
 function BrandMark({ small = false }: { small?: boolean }) {
@@ -67,6 +68,11 @@ function App() {
   const [communityName, setCommunityName] = useState('')
   const [communityError, setCommunityError] = useState<string | null>(null)
   const [communityLoading, setCommunityLoading] = useState(false)
+  const [showCommunitySettings, setShowCommunitySettings] = useState(false)
+  const [communityIconUrl, setCommunityIconUrl] = useState('')
+  const [communityBackgroundUrl, setCommunityBackgroundUrl] = useState('')
+  const [communitySettingsError, setCommunitySettingsError] = useState<string | null>(null)
+  const [communitySettingsSaving, setCommunitySettingsSaving] = useState(false)
 
   useEffect(() => {
     const supabase = getSupabaseClient()
@@ -133,6 +139,61 @@ function App() {
     const initial = name.trim().charAt(0).toUpperCase() || 'K'
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" rx="32" fill="#1b8bff"/><path d="M38 31h17v27l25-27h22L75 63l28 34H81L55 69v28H38z" fill="#fff"/><circle cx="99" cy="29" r="15" fill="#ff7f6e"/><text x="99" y="35" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#10213d">${initial}</text></svg>`
     return `data:image/svg+xml,${encodeURIComponent(svg)}`
+  }
+
+  function chooseCommunityImage(event: React.ChangeEvent<HTMLInputElement>, target: 'icon' | 'background') {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setCommunitySettingsError('Choose an image file.')
+      return
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      setCommunitySettingsError('Community images must be smaller than 3 MB.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => target === 'icon' ? setCommunityIconUrl(String(reader.result)) : setCommunityBackgroundUrl(String(reader.result))
+    reader.readAsDataURL(file)
+  }
+
+  function openCommunitySettings() {
+    if (!community) return
+    setCommunityIconUrl(community.iconUrl)
+    setCommunityBackgroundUrl(community.backgroundUrl || '')
+    setCommunitySettingsError(null)
+    setCustomMenu(null)
+    setShowCommunitySettings(true)
+  }
+
+  async function saveCommunitySettings(name: string) {
+    if (!community || !currentUser) return
+    setCommunitySettingsSaving(true)
+    setCommunitySettingsError(null)
+    const supabase = getSupabaseClient()
+    const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } }
+    const apiUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:4000'
+    try {
+      const response = await fetch(`${apiUrl}/api/servers/${community.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-auth-subject': session?.user.id || currentUser.id,
+          'x-auth-email': currentUser.email,
+          'x-auth-display-name': currentUser.displayName,
+          'x-auth-username': currentUser.username
+        },
+        body: JSON.stringify({ name, iconUrl: communityIconUrl, backgroundUrl: communityBackgroundUrl || undefined })
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Could not update community.')
+      setCommunity(result)
+      setShowCommunitySettings(false)
+    } catch (error) {
+      setCommunitySettingsError(error instanceof Error ? error.message : 'Could not update community.')
+    } finally {
+      setCommunitySettingsSaving(false)
+    }
   }
 
   async function createCommunity() {
@@ -206,6 +267,7 @@ function App() {
   return (
     <div
       className="app-shell"
+      style={community?.backgroundUrl ? { backgroundImage: `linear-gradient(rgba(6, 19, 38, .78), rgba(6, 19, 38, .9)), url(${community.backgroundUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
       onContextMenu={(event) => event.preventDefault()}
       onClick={() => {
         setCustomMenu(null)
@@ -432,6 +494,9 @@ function App() {
       {customMenu && (
         <div className="server-context-menu" style={{ left: customMenu.x, top: customMenu.y }} onClick={(event) => event.stopPropagation()}>
           <strong>{community?.name || 'Community'}</strong>
+          <button onClick={openCommunitySettings}>
+            <Pencil size={15} /> Edit community
+          </button>
             <button onClick={() => { setCommunity(null); setCustomMenu(null) }}>
             <Trash2 size={15} /> Delete server
           </button>
@@ -463,6 +528,19 @@ function App() {
           setName={setCommunityName}
           onClose={() => setShowCommunityModal(false)}
           onCreate={createCommunity}
+        />
+      )}
+      {showCommunitySettings && community && (
+        <CommunitySettingsModal
+          name={community.name}
+          iconUrl={communityIconUrl}
+          backgroundUrl={communityBackgroundUrl}
+          error={communitySettingsError}
+          saving={communitySettingsSaving}
+          onIconChange={(event) => chooseCommunityImage(event, 'icon')}
+          onBackgroundChange={(event) => chooseCommunityImage(event, 'background')}
+          onClose={() => setShowCommunitySettings(false)}
+          onSave={saveCommunitySettings}
         />
       )}
       {showSettings && (
@@ -619,6 +697,49 @@ function PrivateChannelModal({
         <button className="primary-button" disabled={!name.trim()} onClick={onCreate}>
           Create {type} channel <ChevronRight size={16} />
         </button>
+      </section>
+    </div>
+  )
+}
+
+function CommunitySettingsModal({
+  name,
+  iconUrl,
+  backgroundUrl,
+  error,
+  saving,
+  onIconChange,
+  onBackgroundChange,
+  onClose,
+  onSave
+}: {
+  name: string
+  iconUrl: string
+  backgroundUrl: string
+  error: string | null
+  saving: boolean
+  onIconChange: (event: React.ChangeEvent<HTMLInputElement>) => void
+  onBackgroundChange: (event: React.ChangeEvent<HTMLInputElement>) => void
+  onClose: () => void
+  onSave: (name: string) => void
+}) {
+  const [communityName, setCommunityName] = useState(name)
+  return (
+    <div className="modal-backdrop">
+      <section className="dialog community-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="community-settings-title">
+        <button className="dialog-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        <div className="community-art community-art-preview" style={{ backgroundImage: `url(${iconUrl})` }} aria-hidden="true" />
+        <h2 id="community-settings-title">Customize community</h2>
+        <p>Choose the identity and background for this community.</p>
+        <label>Community name<input value={communityName} onChange={(event) => setCommunityName(event.target.value)} maxLength={80} /></label>
+        <label className="community-image-picker">Community icon<input type="file" accept="image/*" onChange={onIconChange} /><small>PNG, JPG, or WEBP up to 3 MB</small></label>
+        <label className="community-image-picker">Community background<input type="file" accept="image/*" onChange={onBackgroundChange} /><small>Used behind your channels and chat</small></label>
+        {backgroundUrl && <div className="community-background-preview" style={{ backgroundImage: `url(${backgroundUrl})` }} />}
+        {error && <div className="modal-error" role="alert">{error}</div>}
+        <div className="dialog-actions">
+          <button className="secondary-button" onClick={onClose}>Cancel</button>
+          <button className="primary-button profile-save-button" disabled={saving || !communityName.trim()} onClick={() => onSave(communityName.trim())}>{saving ? 'Saving...' : 'Save community'}</button>
+        </div>
       </section>
     </div>
   )

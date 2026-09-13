@@ -18,8 +18,11 @@ const messageSchema = z.object({
 const createServerSchema = z.object({
   name: z.string().trim().min(2).max(80),
   slug: z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80),
-  iconUrl: z.string().startsWith('data:image/svg+xml,').max(20000)
+  iconUrl: z.string().startsWith('data:image/').max(200000),
+  backgroundUrl: z.string().startsWith('data:image/').max(500000).optional()
 })
+
+const updateServerSchema = createServerSchema.pick({ name: true, iconUrl: true, backgroundUrl: true })
 
 async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   const subject = request.headers['x-auth-subject']
@@ -61,6 +64,7 @@ app.post('/api/servers', { preHandler: authenticate }, async (request, reply) =>
         name: body.data.name,
         slug: body.data.slug,
         iconUrl: body.data.iconUrl,
+        backgroundUrl: body.data.backgroundUrl,
         ownerId: request.user!.id,
         members: { create: { userId: request.user!.id } },
         channels: {
@@ -76,6 +80,17 @@ app.post('/api/servers', { preHandler: authenticate }, async (request, reply) =>
   })
 
   return reply.code(201).send(server)
+})
+
+app.patch('/api/servers/:serverId', { preHandler: authenticate }, async (request, reply) => {
+  const params = z.object({ serverId: z.string().cuid() }).safeParse(request.params)
+  const body = updateServerSchema.safeParse(request.body)
+  if (!params.success || !body.success) return reply.code(400).send({ error: 'Invalid community details' })
+  const server = await prisma.server.findUnique({ where: { id: params.data.serverId }, select: { ownerId: true } })
+  if (!server) return reply.code(404).send({ error: 'Community not found' })
+  if (server.ownerId !== request.user!.id) return reply.code(403).send({ error: 'Only the community owner can edit it' })
+  const updated = await prisma.server.update({ where: { id: params.data.serverId }, data: body.data })
+  return reply.send(updated)
 })
 
 app.get('/api/channels/:channelId/messages', { preHandler: authenticate }, async (request, reply) => {
