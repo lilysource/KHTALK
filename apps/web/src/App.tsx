@@ -157,6 +157,22 @@ function App() {
     reader.readAsDataURL(file)
   }
 
+  function chooseCreateCommunityImage(event: React.ChangeEvent<HTMLInputElement>, target: 'icon' | 'background') {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setCommunityError('Choose an image file.')
+      return
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      setCommunityError('Community images must be smaller than 3 MB.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => target === 'icon' ? setCommunityIconUrl(String(reader.result)) : setCommunityBackgroundUrl(String(reader.result))
+    reader.readAsDataURL(file)
+  }
+
   function openCommunitySettings() {
     if (!community) return
     setCommunityIconUrl(community.iconUrl)
@@ -216,7 +232,7 @@ function App() {
           'x-auth-display-name': currentUser.displayName,
           'x-auth-username': currentUser.username
         },
-        body: JSON.stringify({ name, slug, iconUrl: communityIcon(name) })
+        body: JSON.stringify({ name, slug, iconUrl: communityIconUrl || communityIcon(name), backgroundUrl: communityBackgroundUrl || undefined })
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Could not create community.')
@@ -302,7 +318,7 @@ function App() {
             <img src={community.iconUrl} alt="" />
           </button>
         )}
-        <button className="server-icon add" aria-label="Create community" onClick={() => { setCommunityError(null); setShowCommunityModal(true) }}>
+        <button className="server-icon add" aria-label="Create community" onClick={() => { setCommunityError(null); setCommunityIconUrl(''); setCommunityBackgroundUrl(''); setShowCommunityModal(true) }}>
           <Plus size={20} />
         </button>
         <div className="rail-spacer" />
@@ -523,9 +539,13 @@ function App() {
       {showCommunityModal && (
         <CreateCommunityModal
           name={communityName}
+          iconUrl={communityIconUrl}
+          backgroundUrl={communityBackgroundUrl}
           error={communityError}
           loading={communityLoading}
           setName={setCommunityName}
+          onIconChange={(event) => chooseCreateCommunityImage(event, 'icon')}
+          onBackgroundChange={(event) => chooseCreateCommunityImage(event, 'background')}
           onClose={() => setShowCommunityModal(false)}
           onCreate={createCommunity}
         />
@@ -732,8 +752,14 @@ function CommunitySettingsModal({
         <h2 id="community-settings-title">Customize community</h2>
         <p>Choose the identity and background for this community.</p>
         <label>Community name<input value={communityName} onChange={(event) => setCommunityName(event.target.value)} maxLength={80} /></label>
-        <label className="community-image-picker">Community icon<input type="file" accept="image/*" onChange={onIconChange} /><small>PNG, JPG, or WEBP up to 3 MB</small></label>
-        <label className="community-image-picker">Community background<input type="file" accept="image/*" onChange={onBackgroundChange} /><small>Used behind your channels and chat</small></label>
+        <label className="community-image-picker">Community icon
+          <span className="upload-button"><Pencil size={14} /> Change icon<input type="file" accept="image/*" onChange={onIconChange} /></span>
+          <small>PNG, JPG, or WEBP up to 3 MB</small>
+        </label>
+        <label className="community-image-picker">Community background
+          <span className="upload-button"><Palette size={14} /> {backgroundUrl ? 'Change background' : 'Choose background'}<input type="file" accept="image/*" onChange={onBackgroundChange} /></span>
+          <small>Used behind your channels and chat</small>
+        </label>
         {backgroundUrl && <div className="community-background-preview" style={{ backgroundImage: `url(${backgroundUrl})` }} />}
         {error && <div className="modal-error" role="alert">{error}</div>}
         <div className="dialog-actions">
@@ -920,7 +946,7 @@ function SettingsPage({
         {section === 'account' && <>
           <SettingsCard icon={<UserRound size={18} />} title="Profile" description="Customize your name, profile image, and bio.">
             <div className="settings-user-summary"><Avatar member={{ avatar: displayName.charAt(0).toUpperCase(), color: 'blue', avatarUrl }} /><div><strong>{displayName}</strong><span>@{username}</span></div></div>
-            <label className="settings-avatar-upload"><span>Profile image</span><input type="file" accept="image/*" onChange={chooseAvatar} /><small>Choose an image up to 2 MB</small></label>
+            <div className="settings-avatar-upload"><span>Profile image</span><label className="upload-button"><Pencil size={14} /> Choose image<input type="file" accept="image/*" onChange={chooseAvatar} /></label><small>JPG, PNG, or WEBP up to 2 MB</small></div>
             <label className="settings-field">Display name<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={50} /></label>
             <label className="settings-field">Username<input value={username} onChange={(event) => setUsername(event.target.value)} maxLength={30} /></label>
             <label className="settings-field">Bio<textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength={160} placeholder="Tell people a little about yourself" /></label>
@@ -968,16 +994,24 @@ function SettingsToggle({ title, description }: { title: string; description: st
 
 function CreateCommunityModal({
   name,
+  iconUrl,
+  backgroundUrl,
   error,
   loading,
   setName,
+  onIconChange,
+  onBackgroundChange,
   onClose,
   onCreate
 }: {
   name: string
+  iconUrl: string
+  backgroundUrl: string
   error: string | null
   loading: boolean
   setName: (name: string) => void
+  onIconChange: (event: React.ChangeEvent<HTMLInputElement>) => void
+  onBackgroundChange: (event: React.ChangeEvent<HTMLInputElement>) => void
   onClose: () => void
   onCreate: () => void
 }) {
@@ -985,7 +1019,7 @@ function CreateCommunityModal({
     <div className="modal-backdrop">
       <section className="dialog community-dialog" role="dialog" aria-modal="true" aria-labelledby="community-title">
         <button className="dialog-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        <div className="community-art" aria-hidden="true"><BrandMark small /></div>
+        <div className="community-art community-art-preview" style={iconUrl ? { backgroundImage: `url(${iconUrl})` } : undefined} aria-hidden="true">{!iconUrl && <BrandMark small />}</div>
         <h2 id="community-title">Create a community</h2>
         <p>Build a place for your friends, team, or interest group.</p>
         <label>
@@ -999,6 +1033,15 @@ function CreateCommunityModal({
             maxLength={80}
           />
         </label>
+        <label className="community-image-picker">Community icon
+          <span className="upload-button"><Pencil size={14} /> {iconUrl ? 'Change icon' : 'Choose icon'}<input type="file" accept="image/*" onChange={onIconChange} /></span>
+          <small>PNG, JPG, or WEBP up to 3 MB</small>
+        </label>
+        <label className="community-image-picker">Community background
+          <span className="upload-button"><Palette size={14} /> {backgroundUrl ? 'Change background' : 'Choose background'}<input type="file" accept="image/*" onChange={onBackgroundChange} /></span>
+          <small>Used behind your channels and chat</small>
+        </label>
+        {backgroundUrl && <div className="community-background-preview" style={{ backgroundImage: `url(${backgroundUrl})` }} />}
         {error && <div className="modal-error" role="alert">{error}</div>}
         <button className="primary-button" disabled={loading || !name.trim()} onClick={onCreate}>
           {loading ? 'Creating...' : 'Create community'} <ChevronRight size={16} />
