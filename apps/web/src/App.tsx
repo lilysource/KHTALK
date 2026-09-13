@@ -301,6 +301,9 @@ function App() {
         </button>
         <BrandMark small />
         <strong>KHTALK</strong>
+        <button className="icon-button mobile-create-community" onClick={() => { setCommunityError(null); setCommunityIconUrl(''); setCommunityBackgroundUrl(''); setShowCommunityModal(true) }} aria-label="Create community">
+          <Plus size={19} />
+        </button>
         <button className="icon-button" onClick={() => setMobilePanel('members')} aria-label="Open members">
           <Users size={19} />
         </button>
@@ -447,7 +450,7 @@ function App() {
       </aside>
 
       <main className="chat-panel">
-        <div className="chat-header">
+        <div className={`chat-header ${!community ? 'empty-chat-header' : ''}`}>
           <div className="channel-title">
             {community && <Hash size={21} />}
             <div>
