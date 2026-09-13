@@ -48,7 +48,11 @@ declare module 'fastify' {
   interface FastifyRequest { user?: { id: string; authSubject: string } }
 }
 
-await app.register(cors, { origin: process.env.WEB_ORIGIN ?? 'http://localhost:5173', credentials: true })
+const configuredWebOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5173'
+await app.register(cors, {
+  origin: [configuredWebOrigin, 'http://localhost:5173', 'http://localhost:5174'],
+  credentials: true
+})
 await app.register(rateLimit, { max: 120, timeWindow: '1 minute' })
 await app.register(websocket)
 

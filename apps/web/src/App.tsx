@@ -206,7 +206,9 @@ function App() {
       setCommunity(result)
       setShowCommunitySettings(false)
     } catch (error) {
-      setCommunitySettingsError(error instanceof Error ? error.message : 'Could not update community.')
+      setCommunitySettingsError(error instanceof TypeError && error.message === 'Failed to fetch'
+        ? `Community API is unavailable at ${apiUrl}. Check VITE_API_URL and make sure the API is running.`
+        : error instanceof Error ? error.message : 'Could not update community.')
     } finally {
       setCommunitySettingsSaving(false)
     }
@@ -240,7 +242,9 @@ function App() {
       setCommunityName('')
       setShowCommunityModal(false)
     } catch (error) {
-      setCommunityError(error instanceof Error ? error.message : 'Could not connect to the community API.')
+      setCommunityError(error instanceof TypeError && error.message === 'Failed to fetch'
+        ? `Community API is unavailable at ${apiUrl}. Start the API with "npm run dev:api" or set VITE_API_URL to your deployed API URL.`
+        : error instanceof Error ? error.message : 'Could not connect to the community API.')
     } finally {
       setCommunityLoading(false)
     }
