@@ -3,8 +3,10 @@ import {
   Bell, ChevronDown, ChevronLeft, ChevronRight, Compass,
   Download, FileText, Gift, Hash, Headphones, Menu, Mic,
   MoreHorizontal, Pin, Plus, Search, Send, Settings, Smile,
-  Users, Volume2, X, Trash2, LockKeyhole, LogOut, Check, Pencil
+  Users, Volume2, X, Trash2, LockKeyhole, LogOut, Check, Pencil,
+  ShieldCheck, Mail, KeyRound, HelpCircle, UserRound, BellRing, Palette, Eye
 } from 'lucide-react'
+import type { User } from '@supabase/supabase-js'
 import { useChatStore } from './stores/useChatStore'
 import { AuthPage } from './components/AuthPage'
 import { getSupabaseClient, mapSupabaseUserToProfile } from './lib/supabase'
@@ -60,6 +62,7 @@ function App() {
   const [profileBio, setProfileBio] = useState('')
   const [profileError, setProfileError] = useState<string | null>(null)
   const [profileSaving, setProfileSaving] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [privateChannels, setPrivateChannels] = useState<string[]>([])
   const [privateVoiceChannels, setPrivateVoiceChannels] = useState<string[]>([])
   const [channelName, setChannelName] = useState('')
@@ -395,7 +398,9 @@ function App() {
             </div>
             <Mic size={16} />
             <Headphones size={16} />
-            <Settings size={17} />
+            <button className="settings-trigger" aria-label="Open settings" onClick={(event) => { event.stopPropagation(); setShowSettings(true); setShowUserMenu(false) }}>
+              <Settings size={17} />
+            </button>
           </div>
         </div>
       </aside>
@@ -514,6 +519,9 @@ function App() {
           onClose={() => setShowProfileEditor(false)}
           onSave={saveProfile}
         />
+      )}
+      {showSettings && (
+        <SettingsPage user={currentUser} onClose={() => setShowSettings(false)} onUserUpdated={(user) => setCurrentUser(mapSupabaseUserToProfile(user))} />
       )}
       {channelToDelete && (
         <DeleteChannelModal
@@ -669,6 +677,180 @@ function PrivateChannelModal({
       </section>
     </div>
   )
+}
+
+function SettingsPage({
+  user,
+  onClose,
+  onUserUpdated
+}: {
+  user: { displayName: string; username: string; email: string; bio?: string }
+  onClose: () => void
+  onUserUpdated: (user: User) => void
+}) {
+  const [section, setSection] = useState('account')
+  const [email, setEmail] = useState(user.email)
+  const [password, setPassword] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [factorId, setFactorId] = useState<string | null>(null)
+  const [totpUri, setTotpUri] = useState<string | null>(null)
+  const [verificationCode, setVerificationCode] = useState('')
+  const [twoStepEnabled, setTwoStepEnabled] = useState(false)
+  const [backupCodes, setBackupCodes] = useState<string[]>([])
+
+  const supabase = getSupabaseClient()
+
+  useEffect(() => {
+    supabase?.auth.mfa.listFactors().then(({ data }) => {
+      setTwoStepEnabled(Boolean(data?.totp?.some((factor) => factor.status === 'verified')))
+    })
+  }, [supabase])
+
+  function clearFeedback() {
+    setMessage(null)
+    setError(null)
+  }
+
+  async function updateEmail() {
+    if (!supabase || !email.trim()) return
+    setSaving(true)
+    clearFeedback()
+    const { data, error: updateError } = await supabase.auth.updateUser({ email: email.trim() })
+    if (updateError) setError(updateError.message)
+    else if (data.user) {
+      onUserUpdated(data.user)
+      setMessage('A confirmation link was sent to your new email address.')
+    }
+    setSaving(false)
+  }
+
+  async function updatePassword() {
+    if (!supabase || password.length < 6) {
+      setError('Password must be at least 6 characters long.')
+      return
+    }
+    setSaving(true)
+    clearFeedback()
+    const { error: updateError } = await supabase.auth.updateUser({ password })
+    if (updateError) setError(updateError.message)
+    else {
+      setPassword('')
+      setMessage('Your password was changed successfully.')
+    }
+    setSaving(false)
+  }
+
+  async function startTwoStep() {
+    if (!supabase) return
+    setSaving(true)
+    clearFeedback()
+    const { data, error: enrollError } = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'KHTALK Authenticator' })
+    if (enrollError) setError(enrollError.message)
+    else if (data) {
+      setFactorId(data.id)
+      setTotpUri(data.totp.uri)
+      setMessage('Scan the authenticator code, then enter the six-digit code to finish setup.')
+    }
+    setSaving(false)
+  }
+
+  async function verifyTwoStep() {
+    if (!supabase || !factorId || verificationCode.length !== 6) return
+    setSaving(true)
+    clearFeedback()
+    const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({ factorId })
+    if (challengeError) setError(challengeError.message)
+    else {
+      const { error: verifyError } = await supabase.auth.mfa.verify({ factorId, challengeId: challenge.id, code: verificationCode })
+      if (verifyError) setError(verifyError.message)
+      else {
+        setTwoStepEnabled(true)
+        setTotpUri(null)
+        setFactorId(null)
+        setVerificationCode('')
+        setMessage('Two-step verification is enabled.')
+      }
+    }
+    setSaving(false)
+  }
+
+  function generateBackupCodes() {
+    const codes = Array.from({ length: 8 }, () => `${crypto.randomUUID().slice(0, 4)}-${crypto.randomUUID().slice(0, 4)}`.toUpperCase())
+    setBackupCodes(codes)
+    setMessage('Save these codes somewhere secure. They will not be shown again after leaving this page.')
+  }
+
+  const sections = [
+    { id: 'account', label: 'My account', icon: UserRound },
+    { id: 'security', label: 'Security', icon: ShieldCheck },
+    { id: 'privacy', label: 'Privacy & safety', icon: Eye },
+    { id: 'notifications', label: 'Notifications', icon: BellRing },
+    { id: 'appearance', label: 'Appearance', icon: Palette },
+    { id: 'help', label: 'Help & support', icon: HelpCircle }
+  ]
+
+  return (
+    <div className="settings-page">
+      <aside className="settings-nav">
+        <button className="settings-back" onClick={onClose}><ChevronLeft size={18} /> Back</button>
+        <h2>Settings</h2>
+        {sections.map(({ id, label, icon: Icon }) => (
+          <button key={id} className={section === id ? 'selected' : ''} onClick={() => { setSection(id); clearFeedback() }}>
+            <Icon size={16} /> {label}
+          </button>
+        ))}
+        <div className="settings-nav-footer">KHTALK<br /><span>Developed by Chiro</span></div>
+      </aside>
+      <main className="settings-content">
+        <header className="settings-titlebar">
+          <div><p>SETTINGS</p><h1>{sections.find((item) => item.id === section)?.label}</h1></div>
+          <button className="settings-close" onClick={onClose} aria-label="Close settings"><X size={20} /></button>
+        </header>
+        {message && <div className="settings-message">{message}</div>}
+        {error && <div className="settings-error">{error}</div>}
+
+        {section === 'account' && <>
+          <SettingsCard icon={<UserRound size={18} />} title="Account information" description="Manage the details connected to your KHTALK account.">
+            <div className="settings-user-summary"><Avatar member={{ avatar: user.displayName.charAt(0).toUpperCase(), color: 'blue' }} /><div><strong>{user.displayName}</strong><span>@{user.username}</span></div></div>
+            <label className="settings-field">Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+            <button className="settings-action" disabled={saving || email === user.email} onClick={updateEmail}><Mail size={15} /> Change email</button>
+          </SettingsCard>
+          <SettingsCard icon={<KeyRound size={18} />} title="Password" description="Use a strong password that you do not reuse elsewhere.">
+            <label className="settings-field">New password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" /></label>
+            <button className="settings-action" disabled={saving || !password} onClick={updatePassword}><KeyRound size={15} /> Change password</button>
+          </SettingsCard>
+        </>}
+
+        {section === 'security' && <>
+          <SettingsCard icon={<ShieldCheck size={18} />} title="Two-step verification" description="Protect your account with an authenticator app.">
+            <div className="settings-row"><div><strong>{twoStepEnabled ? 'Two-step verification is on' : 'Two-step verification is off'}</strong><span>{twoStepEnabled ? 'Your account requires an authenticator code.' : 'Add another layer of protection.'}</span></div><span className={`settings-badge ${twoStepEnabled ? 'on' : ''}`}>{twoStepEnabled ? 'ON' : 'OFF'}</span></div>
+            {!twoStepEnabled && !factorId && <button className="settings-action" disabled={saving} onClick={startTwoStep}><ShieldCheck size={15} /> Set up two-step verification</button>}
+            {totpUri && <div className="totp-setup"><small>Authenticator setup key</small><code>{totpUri}</code><input inputMode="numeric" maxLength={6} value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, ''))} placeholder="6-digit code" /><button className="settings-action" disabled={saving || verificationCode.length !== 6} onClick={verifyTwoStep}>Verify and enable</button></div>}
+          </SettingsCard>
+          <SettingsCard icon={<KeyRound size={18} />} title="Backup codes" description="Use a backup code if you lose access to your authenticator.">
+            <button className="settings-action" onClick={generateBackupCodes}><KeyRound size={15} /> Generate backup codes</button>
+            {backupCodes.length > 0 && <div className="backup-code-grid">{backupCodes.map((code) => <code key={code}>{code}</code>)}</div>}
+          </SettingsCard>
+        </>}
+
+        {section === 'privacy' && <SettingsCard icon={<Eye size={18} />} title="Privacy & safety" description="Control how your account is discovered and contacted."><SettingsToggle title="Allow direct messages" description="Let community members message you." /><SettingsToggle title="Show online status" description="Let others see when you are online." /><SettingsToggle title="Filter sensitive content" description="Hide potentially unsafe messages." /></SettingsCard>}
+        {section === 'notifications' && <SettingsCard icon={<BellRing size={18} />} title="Notifications" description="Choose which activity should get your attention."><SettingsToggle title="Message notifications" description="Notify me about new messages." /><SettingsToggle title="Community announcements" description="Notify me about important updates." /></SettingsCard>}
+        {section === 'appearance' && <SettingsCard icon={<Palette size={18} />} title="Appearance" description="Personalize the KHTALK interface."><SettingsToggle title="Compact message layout" description="Use less space between messages." /><SettingsToggle title="Use animations" description="Keep interface transitions enabled." /></SettingsCard>}
+        {section === 'help' && <SettingsCard icon={<HelpCircle size={18} />} title="Help & support" description="Find answers and contact the KHTALK team."><div className="help-row"><strong>Need help?</strong><span>Check the project documentation or contact support.</span></div><div className="help-row"><strong>About KHTALK</strong><span>Built with care by Chiro.</span></div></SettingsCard>}
+      </main>
+    </div>
+  )
+}
+
+function SettingsCard({ icon, title, description, children }: { icon: React.ReactNode; title: string; description: string; children: React.ReactNode }) {
+  return <section className="settings-card"><div className="settings-card-heading"><div className="settings-card-icon">{icon}</div><div><h2>{title}</h2><p>{description}</p></div></div><div className="settings-card-body">{children}</div></section>
+}
+
+function SettingsToggle({ title, description }: { title: string; description: string }) {
+  const [enabled, setEnabled] = useState(true)
+  return <button className="settings-toggle" onClick={() => setEnabled(!enabled)}><span><strong>{title}</strong><small>{description}</small></span><span className={`toggle-track ${enabled ? 'enabled' : ''}`}><span /></span></button>
 }
 
 function CreateCommunityModal({

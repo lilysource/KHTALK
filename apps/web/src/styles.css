@@ -148,4 +148,36 @@
 .popover-divider { height: 1px; background: var(--line); margin: 10px 0; }
 .logout-btn { width: 100%; height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 6px; background: rgba(244, 63, 94, .12); color: #fda4af; font-size: 12px; font-weight: 600; text-align: left; transition: all .2s; }
 .logout-btn:hover { background: rgba(244, 63, 94, .24); color: #fff; }
+.settings-trigger { display: grid; place-items: center; padding: 0; background: transparent; color: inherit; }
+.settings-page { position: fixed; inset: 0; z-index: 70; display: grid; grid-template-columns: 250px minmax(0, 760px); justify-content: center; gap: 46px; overflow: auto; background: #07172b; color: #e7f0ff; }
+.settings-nav { min-height: 100vh; padding: 42px 10px 30px 0; border-right: 1px solid var(--line); }
+.settings-nav h2 { margin: 26px 18px 16px; font: 700 25px 'Space Grotesk'; color: #f4f8ff; }
+.settings-back, .settings-nav > button:not(.settings-back) { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 7px; background: transparent; color: #7997bb; font-size: 12px; text-align: left; }
+.settings-back { color: #9ab9df; font-weight: 600; }
+.settings-nav > button:hover, .settings-nav > button.selected { background: #12345b; color: #fff; }
+.settings-nav-footer { margin: 38px 18px 0; color: #4e729e; font: 700 12px 'Space Grotesk'; line-height: 1.6; }
+.settings-nav-footer span { color: #6d8bad; font: 400 10px 'DM Sans'; }
+.settings-content { width: min(760px, calc(100vw - 330px)); padding: 52px 0 70px; }
+.settings-titlebar { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; }
+.settings-titlebar p { margin: 0 0 8px; color: #4faeff; font-size: 10px; font-weight: 700; letter-spacing: .14em; }
+.settings-titlebar h1 { margin: 0; font: 700 28px 'Space Grotesk'; color: #f4f8ff; }
+.settings-close { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid #254b76; border-radius: 8px; background: #0d2748; color: #8aabcf; }
+.settings-close:hover { color: #fff; background: #17385f; }
+.settings-card { margin-bottom: 18px; border: 1px solid #1f4773; border-radius: 12px; background: #0b203b; overflow: hidden; }
+.settings-card-heading { display: flex; gap: 13px; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+.settings-card-icon { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 9px; background: #124f8d; color: #73c1ff; }
+.settings-card-heading h2 { margin: 0 0 4px; font: 600 15px 'Space Grotesk'; color: #eef6ff; }
+.settings-card-heading p { margin: 0; color: #7797bd; font-size: 11px; line-height: 1.45; }
+.settings-card-body { padding: 20px 22px; }
+.settings-user-summary { display: flex; align-items: center; gap: 11px; margin-bottom: 18px; }
+.settings-user-summary strong, .settings-user-summary span { display: block; }
+.settings-user-summary strong { color: #edf5ff; font-size: 13px; }.settings-user-summary span { margin-top: 2px; color: #7194bb; font-size: 11px; }
+.settings-field { display: block; margin: 13px 0; color: #a9c5e7; font-size: 11px; }.settings-field input { width: 100%; height: 40px; margin-top: 7px; padding: 0 11px; border: 1px solid #285583; border-radius: 7px; outline: 0; background: #081a32; color: #e9f3ff; font-size: 12px; }.settings-field input:focus { border-color: #36a6ff; }
+.settings-action { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 13px; border-radius: 7px; background: #126bce; color: #fff; font-size: 11px; font-weight: 700; }.settings-action:hover { background: #1c87ed; }.settings-action:disabled { cursor: not-allowed; opacity: .5; }
+.settings-row, .settings-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 0; background: transparent; color: #d9eaff; text-align: left; }.settings-row strong, .settings-toggle strong, .settings-toggle small, .settings-row span { display: block; }.settings-row strong, .settings-toggle strong { font-size: 12px; }.settings-row > div > span, .settings-toggle small { margin-top: 3px; color: #7595b9; font-size: 10px; }.settings-badge { padding: 4px 7px; border-radius: 5px; background: #263b56; color: #8aa1bd; font-size: 9px; font-weight: 700; }.settings-badge.on { background: rgba(67, 213, 147, .15); color: #43d593; }
+.totp-setup { display: grid; gap: 9px; margin-top: 12px; padding: 13px; border-radius: 8px; background: #081a32; }.totp-setup small { color: #89a8cc; font-size: 10px; }.totp-setup code { overflow-wrap: anywhere; color: #65b8ff; font-size: 10px; }.totp-setup input { height: 38px; padding: 0 10px; border: 1px solid #285583; border-radius: 6px; background: #0a2343; color: #fff; letter-spacing: .25em; }.backup-code-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 14px; }.backup-code-grid code { padding: 8px 4px; border-radius: 5px; background: #081a32; color: #b9dcff; font-size: 10px; text-align: center; }
+.settings-toggle { border-bottom: 1px solid var(--line); }.settings-toggle:last-child { border-bottom: 0; }.toggle-track { width: 35px; height: 20px; flex: 0 0 auto; padding: 3px; border-radius: 12px; background: #29425f; transition: .2s; }.toggle-track span { display: block; width: 14px; height: 14px; border-radius: 50%; background: #9bb1c9; transition: .2s; }.toggle-track.enabled { background: #167be4; }.toggle-track.enabled span { transform: translateX(15px); background: #fff; }
+.help-row { display: grid; gap: 4px; padding: 13px 0; border-bottom: 1px solid var(--line); }.help-row:last-child { border-bottom: 0; }.help-row strong { color: #e9f3ff; font-size: 12px; }.help-row span { color: #7898bc; font-size: 11px; }
+.settings-message, .settings-error { margin: -10px 0 18px; padding: 11px 13px; border-radius: 7px; font-size: 11px; }.settings-message { border: 1px solid rgba(52, 211, 153, .35); background: rgba(16, 185, 129, .12); color: #86efac; }.settings-error { border: 1px solid rgba(244, 63, 94, .4); background: rgba(225, 29, 72, .12); color: #fda4af; }
+@media (max-width: 760px) { .settings-page { display: block; }.settings-nav { min-height: auto; padding: 16px; border-right: 0; }.settings-nav h2 { margin: 20px 0 10px; }.settings-nav-footer { display: none; }.settings-content { width: auto; padding: 20px 16px 50px; }.settings-nav > button:not(.settings-back) { display: inline-flex; width: auto; margin: 3px 2px; }.settings-titlebar h1 { font-size: 23px; }.backup-code-grid { grid-template-columns: repeat(2, 1fr); } }
 
