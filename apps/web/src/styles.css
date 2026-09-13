@@ -81,6 +81,12 @@
 .server-icon img { width: 31px; height: 31px; border-radius: 9px; display: block; }
 .server-icon.add { width: 54px; height: 54px; border-radius: 16px; border-width: 2px; color: #73baff; }
 .server-icon.add svg { width: 26px; height: 26px; }
+.user-panel-wrap { position: relative; margin-top: auto; }
+.profile-edit-btn { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 9px; border-radius: 6px; background: transparent; color: #a9c5e7; font-size: 12px; text-align: left; }
+.profile-edit-btn:hover { background: #173a65; color: #fff; }
+.profile-dialog textarea { width: 100%; min-height: 76px; margin-top: 7px; padding: 9px 11px; resize: vertical; border: 1px solid #285583; border-radius: 7px; outline: 0; background: #0a2343; color: #e9f3ff; font: inherit; font-size: 12px; }
+.profile-dialog textarea:focus { border-color: #36a6ff; }
+.profile-save-button { flex: 1; width: auto; margin-top: 0; }
 .community-art { width: 62px; height: 62px; display: grid; place-items: center; border-radius: 18px; background: linear-gradient(145deg, #1b8bff, #1557c9); box-shadow: 0 12px 26px rgba(16, 126, 246, .3); }
 .community-art .brand-mark { width: 44px; height: 44px; border-radius: 13px; font-size: 25px; box-shadow: none; }
 .modal-error { margin-top: 12px; padding: 9px 10px; border: 1px solid rgba(244, 63, 94, .4); border-radius: 7px; background: rgba(225, 29, 72, .12); color: #fda4af; font-size: 11px; line-height: 1.4; }

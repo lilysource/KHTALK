@@ -75,6 +75,7 @@ export function mapSupabaseUserToProfile(user: User): UserProfile {
     email: user.email || '',
     displayName,
     username,
+    bio: meta.bio || '',
     avatar: displayName.charAt(0).toUpperCase() || 'U',
     color,
     status: 'Online'

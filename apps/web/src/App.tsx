@@ -3,7 +3,7 @@ import {
   Bell, ChevronDown, ChevronLeft, ChevronRight, Compass,
   Download, FileText, Gift, Hash, Headphones, Menu, Mic,
   MoreHorizontal, Pin, Plus, Search, Send, Settings, Smile,
-  Users, Volume2, X, Trash2, LockKeyhole, LogOut, Check
+  Users, Volume2, X, Trash2, LockKeyhole, LogOut, Check, Pencil
 } from 'lucide-react'
 import { useChatStore } from './stores/useChatStore'
 import { AuthPage } from './components/AuthPage'
@@ -54,6 +54,12 @@ function App() {
   const [channelToDelete, setChannelToDelete] = useState<string | null>(null)
   const [showChannelModal, setShowChannelModal] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showProfileEditor, setShowProfileEditor] = useState(false)
+  const [profileName, setProfileName] = useState('')
+  const [profileUsername, setProfileUsername] = useState('')
+  const [profileBio, setProfileBio] = useState('')
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const [profileSaving, setProfileSaving] = useState(false)
   const [privateChannels, setPrivateChannels] = useState<string[]>([])
   const [privateVoiceChannels, setPrivateVoiceChannels] = useState<string[]>([])
   const [channelName, setChannelName] = useState('')
@@ -97,6 +103,38 @@ function App() {
     }
     setCurrentUser(null)
     setShowUserMenu(false)
+  }
+
+  function openProfileEditor() {
+    setProfileName(currentUser?.displayName || '')
+    setProfileUsername(currentUser?.username || '')
+    setProfileBio(currentUser?.bio || '')
+    setProfileError(null)
+    setShowUserMenu(false)
+    setShowProfileEditor(true)
+  }
+
+  async function saveProfile() {
+    const displayName = profileName.trim()
+    const username = profileUsername.trim().toLowerCase().replace(/[^a-z0-9_]/g, '')
+    if (!displayName || !username) {
+      setProfileError('Name and username are required.')
+      return
+    }
+    const supabase = getSupabaseClient()
+    if (!supabase || !currentUser) return
+    setProfileSaving(true)
+    setProfileError(null)
+    const { data, error } = await supabase.auth.updateUser({
+      data: { display_name: displayName, username, bio: profileBio.trim() }
+    })
+    if (error) {
+      setProfileError(error.message)
+    } else if (data.user) {
+      setCurrentUser(mapSupabaseUserToProfile(data.user))
+      setShowProfileEditor(false)
+    }
+    setProfileSaving(false)
   }
 
   const allMessages = sentMessages
@@ -289,7 +327,7 @@ function App() {
         </div>
 
         {/* Real Logged-in User Panel & Popover */}
-        <div style={{ position: 'relative' }}>
+        <div className="user-panel-wrap">
           {showUserMenu && (
             <div className="user-profile-popover" onClick={(e) => e.stopPropagation()}>
               <div className="popover-header">
@@ -320,6 +358,10 @@ function App() {
               ))}
 
               <div className="popover-divider" />
+              <button type="button" className="profile-edit-btn" onClick={openProfileEditor}>
+                <Pencil size={15} />
+                <span>Edit profile</span>
+              </button>
               <button type="button" className="logout-btn" onClick={handleSignOut}>
                 <LogOut size={15} />
                 <span>Log Out</span>
@@ -457,6 +499,20 @@ function App() {
           setName={setCommunityName}
           onClose={() => setShowCommunityModal(false)}
           onCreate={createCommunity}
+        />
+      )}
+      {showProfileEditor && (
+        <ProfileEditModal
+          name={profileName}
+          username={profileUsername}
+          bio={profileBio}
+          error={profileError}
+          saving={profileSaving}
+          setName={setProfileName}
+          setUsername={setProfileUsername}
+          setBio={setProfileBio}
+          onClose={() => setShowProfileEditor(false)}
+          onSave={saveProfile}
         />
       )}
       {channelToDelete && (
@@ -652,6 +708,60 @@ function CreateCommunityModal({
         <button className="primary-button" disabled={loading || !name.trim()} onClick={onCreate}>
           {loading ? 'Creating...' : 'Create community'} <ChevronRight size={16} />
         </button>
+      </section>
+    </div>
+  )
+}
+
+function ProfileEditModal({
+  name,
+  username,
+  bio,
+  error,
+  saving,
+  setName,
+  setUsername,
+  setBio,
+  onClose,
+  onSave
+}: {
+  name: string
+  username: string
+  bio: string
+  error: string | null
+  saving: boolean
+  setName: (value: string) => void
+  setUsername: (value: string) => void
+  setBio: (value: string) => void
+  onClose: () => void
+  onSave: () => void
+}) {
+  return (
+    <div className="modal-backdrop">
+      <section className="dialog profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+        <button className="dialog-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        <div className="dialog-icon"><Pencil size={20} /></div>
+        <h2 id="profile-title">Edit profile</h2>
+        <p>Update how people see you in KHTALK.</p>
+        <label>
+          Display name
+          <input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={50} />
+        </label>
+        <label>
+          Username
+          <input value={username} onChange={(event) => setUsername(event.target.value)} maxLength={30} />
+        </label>
+        <label>
+          Bio
+          <textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength={160} placeholder="Tell people a little about yourself" />
+        </label>
+        {error && <div className="modal-error" role="alert">{error}</div>}
+        <div className="dialog-actions">
+          <button className="secondary-button" onClick={onClose}>Cancel</button>
+          <button className="primary-button profile-save-button" disabled={saving} onClick={onSave}>
+            {saving ? 'Saving...' : 'Save profile'}
+          </button>
+        </div>
       </section>
     </div>
   )
