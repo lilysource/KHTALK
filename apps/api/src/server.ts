@@ -15,13 +15,29 @@ const messageSchema = z.object({
   replyToId: z.string().cuid().optional()
 })
 
+const createServerSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  slug: z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80),
+  iconUrl: z.string().startsWith('data:image/svg+xml,').max(20000)
+})
+
 async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   const subject = request.headers['x-auth-subject']
   if (typeof subject !== 'string' || subject.length < 1) {
     return reply.code(401).send({ error: 'Authentication required' })
   }
-  const user = await prisma.user.findUnique({ where: { authSubject: subject } })
-  if (!user) return reply.code(401).send({ error: 'User account not found' })
+  let user = await prisma.user.findUnique({ where: { authSubject: subject } })
+  if (!user) {
+    const email = request.headers['x-auth-email']
+    const displayName = request.headers['x-auth-display-name']
+    const username = request.headers['x-auth-username']
+    if (typeof email !== 'string' || typeof displayName !== 'string' || typeof username !== 'string') {
+      return reply.code(401).send({ error: 'User account not found' })
+    }
+    user = await prisma.user.create({
+      data: { authSubject: subject, email, displayName, username }
+    })
+  }
   request.user = user
 }
 
@@ -34,6 +50,33 @@ await app.register(rateLimit, { max: 120, timeWindow: '1 minute' })
 await app.register(websocket)
 
 app.get('/health', async () => ({ name: 'KHTALK API', status: 'ok', timestamp: new Date().toISOString() }))
+
+app.post('/api/servers', { preHandler: authenticate }, async (request, reply) => {
+  const body = createServerSchema.safeParse(request.body)
+  if (!body.success) return reply.code(400).send({ error: 'Invalid community details' })
+
+  const server = await prisma.$transaction(async (transaction) => {
+    const created = await transaction.server.create({
+      data: {
+        name: body.data.name,
+        slug: body.data.slug,
+        iconUrl: body.data.iconUrl,
+        ownerId: request.user!.id,
+        members: { create: { userId: request.user!.id } },
+        channels: {
+          create: [
+            { name: 'general', topic: 'Welcome to your new community' },
+            { name: 'announcements', topic: 'Important community updates' }
+          ]
+        }
+      },
+      include: { channels: { orderBy: { position: 'asc' } } }
+    })
+    return created
+  })
+
+  return reply.code(201).send(server)
+})
 
 app.get('/api/channels/:channelId/messages', { preHandler: authenticate }, async (request, reply) => {
   const params = z.object({ channelId: z.string().cuid() }).safeParse(request.params)

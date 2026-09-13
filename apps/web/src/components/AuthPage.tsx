@@ -1,13 +1,10 @@
 import { useState, useEffect } from 'react'
 import {
   Lock, Mail, User, Eye, EyeOff, AlertCircle, CheckCircle2,
-  Loader2, ChevronRight, Sparkles, KeyRound, ArrowLeft, Settings2
+  Loader2, ChevronRight, KeyRound, ArrowLeft
 } from 'lucide-react'
 import {
-  getSupabaseCredentials,
-  saveSupabaseCredentials,
   getSupabaseClient,
-  resetSupabaseClient,
   mapSupabaseUserToProfile
 } from '../lib/supabase'
 import { useChatStore } from '../stores/useChatStore'
@@ -34,13 +31,6 @@ export function AuthPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [canResendEmail, setCanResendEmail] = useState(false)
 
-  // Supabase config state
-  const [config, setConfig] = useState(getSupabaseCredentials())
-  const [showConfigDrawer, setShowConfigDrawer] = useState(!config.isConfigured)
-  const [customUrl, setCustomUrl] = useState(config.url)
-  const [customAnonKey, setCustomAnonKey] = useState(config.anonKey)
-  const [configSaving, setConfigSaving] = useState(false)
-
   useEffect(() => {
     // Check if a session already exists
     const supabase = getSupabaseClient()
@@ -53,49 +43,10 @@ export function AuthPage() {
     })
   }, [setCurrentUser])
 
-  function handleSaveSupabaseConfig(e: React.FormEvent) {
-    e.preventDefault()
-    setErrorMessage(null)
-    setSuccessMessage(null)
-
-    const trimmedUrl = customUrl.trim()
-    const trimmedKey = customAnonKey.trim()
-
-    if (!trimmedUrl || !trimmedKey) {
-      setErrorMessage('Please provide both your Supabase Project URL and Anon Key.')
-      return
-    }
-
-    if (!trimmedUrl.startsWith('https://')) {
-      setErrorMessage('Project URL must start with https:// (e.g. https://your-project.supabase.co)')
-      return
-    }
-
-    setConfigSaving(true)
-    try {
-      saveSupabaseCredentials(trimmedUrl, trimmedKey)
-      resetSupabaseClient()
-      const updated = getSupabaseCredentials()
-      setConfig(updated)
-      setShowConfigDrawer(false)
-      setSuccessMessage('Supabase credentials successfully connected! You can now log in or sign up.')
-    } catch {
-      setErrorMessage('Failed to save Supabase credentials.')
-    } finally {
-      setConfigSaving(false)
-    }
-  }
-
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault()
     setErrorMessage(null)
     setSuccessMessage(null)
-
-    if (!config.isConfigured) {
-      setShowConfigDrawer(true)
-      setErrorMessage('⚠️ Supabase credentials required. Please enter your Project URL and Anon Key above.')
-      return
-    }
 
     const trimmedEmail = email.trim()
     if (!trimmedEmail) {
@@ -109,8 +60,7 @@ export function AuthPage() {
 
     const supabase = getSupabaseClient()
     if (!supabase) {
-      setShowConfigDrawer(true)
-      setErrorMessage('Supabase client is not available. Please check your credentials.')
+      setErrorMessage('Supabase is not configured for this build.')
       return
     }
 
@@ -174,12 +124,6 @@ export function AuthPage() {
     setErrorMessage(null)
     setSuccessMessage(null)
 
-    if (!config.isConfigured) {
-      setShowConfigDrawer(true)
-      setErrorMessage('⚠️ Supabase credentials required. Please enter your Project URL and Anon Key above to create accounts.')
-      return
-    }
-
     const trimmedEmail = email.trim()
     const trimmedDisplayName = displayName.trim()
     const trimmedUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '')
@@ -215,8 +159,7 @@ export function AuthPage() {
 
     const supabase = getSupabaseClient()
     if (!supabase) {
-      setShowConfigDrawer(true)
-      setErrorMessage('Supabase client is not available. Please verify credentials.')
+      setErrorMessage('Supabase is not configured for this build.')
       return
     }
 
@@ -261,12 +204,6 @@ export function AuthPage() {
     setErrorMessage(null)
     setSuccessMessage(null)
 
-    if (!config.isConfigured) {
-      setShowConfigDrawer(true)
-      setErrorMessage('Please connect your Supabase project first.')
-      return
-    }
-
     const trimmedEmail = email.trim()
     if (!trimmedEmail) {
       setErrorMessage('Please enter your email address to receive password reset instructions.')
@@ -308,72 +245,11 @@ export function AuthPage() {
         </div>
 
         <section className="account-card">
-        {/* Supabase connection status button in card corner */}
         <div className="account-card-header">
           <div className="dialog-icon">
             <Lock size={20} />
           </div>
-          <button
-            type="button"
-            className={`supabase-status-pill ${config.isConfigured ? 'connected' : 'unconfigured'}`}
-            onClick={() => setShowConfigDrawer(!showConfigDrawer)}
-            title="Configure Supabase project connection"
-          >
-            <Settings2 size={13} />
-            <span>{config.isConfigured ? 'Supabase Connected' : 'Setup Supabase'}</span>
-          </button>
         </div>
-
-        {/* Supabase Config Drawer */}
-        {showConfigDrawer && (
-          <form onSubmit={handleSaveSupabaseConfig} className="supabase-config-drawer">
-            <div className="config-drawer-title">
-              <Sparkles size={15} />
-              <strong>Connect Your Real Supabase Project</strong>
-            </div>
-            <p>
-              Paste your Supabase credentials below or place them into{' '}
-              <code>apps/web/.env</code> as <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code>.
-            </p>
-
-            <label>
-              Project URL (API URL)
-              <input
-                type="url"
-                placeholder="https://xyzcompany.supabase.co"
-                value={customUrl}
-                onChange={(e) => setCustomUrl(e.target.value)}
-              />
-            </label>
-
-            <label>
-              Anon Public API Key
-              <input
-                type="text"
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                value={customAnonKey}
-                onChange={(e) => setCustomAnonKey(e.target.value)}
-              />
-            </label>
-
-            <div className="config-drawer-actions">
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => setShowConfigDrawer(false)}
-              >
-                Close
-              </button>
-              <button
-                type="submit"
-                className="primary-button compact"
-                disabled={configSaving || !customUrl.trim() || !customAnonKey.trim()}
-              >
-                {configSaving ? <Loader2 size={14} className="spin" /> : 'Save & Connect'}
-              </button>
-            </div>
-          </form>
-        )}
 
         {/* Auth Mode Switcher */}
         {mode !== 'forgot' && (
@@ -449,26 +325,6 @@ export function AuthPage() {
           </>
         )}
 
-        {/* Supabase Not Configured Warning */}
-        {!config.isConfigured && (
-          <div className="auth-alert warning" role="alert">
-            <AlertCircle size={18} />
-            <div className="alert-copy">
-              <strong>Supabase Not Connected</strong>
-              <p>
-                To create real accounts and save them in the database, click{' '}
-                <button
-                  type="button"
-                  className="link-accent-inline"
-                  onClick={() => setShowConfigDrawer(true)}
-                >
-                  Setup Supabase
-                </button>{' '}
-                to enter your Project URL and Anon Key.
-              </p>
-            </div>
-          </div>
-        )}
 
         {/* Error Alert */}
         {errorMessage && (

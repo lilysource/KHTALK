@@ -78,6 +78,10 @@
 .label-with-action { display: flex; justify-content: space-between; align-items: center; }
 .link-button { background: transparent; color: #4db1ff; font-size: 11px; padding: 0; font-weight: 500; }
 .link-button:hover { text-decoration: underline; color: #82c8ff; }
+.server-icon img { width: 31px; height: 31px; border-radius: 9px; display: block; }
+.community-art { width: 62px; height: 62px; display: grid; place-items: center; border-radius: 18px; background: linear-gradient(145deg, #1b8bff, #1557c9); box-shadow: 0 12px 26px rgba(16, 126, 246, .3); }
+.community-art .brand-mark { width: 44px; height: 44px; border-radius: 13px; font-size: 25px; box-shadow: none; }
+.modal-error { margin-top: 12px; padding: 9px 10px; border: 1px solid rgba(244, 63, 94, .4); border-radius: 7px; background: rgba(225, 29, 72, .12); color: #fda4af; font-size: 11px; line-height: 1.4; }
 .link-accent { background: transparent; color: #3aa8ff; font-weight: 600; padding: 0; font-size: inherit; }
 .link-accent:hover { text-decoration: underline; }
 

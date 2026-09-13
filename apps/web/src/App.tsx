@@ -3,7 +3,7 @@ import {
   Bell, ChevronDown, ChevronLeft, ChevronRight, Compass,
   Download, FileText, Gift, Hash, Headphones, Menu, Mic,
   MoreHorizontal, Pin, Plus, Search, Send, Settings, Smile,
-  Sparkles, Users, Volume2, X, Trash2, LockKeyhole, LogOut, Check
+  Users, Volume2, X, Trash2, LockKeyhole, LogOut, Check
 } from 'lucide-react'
 import { useChatStore } from './stores/useChatStore'
 import { AuthPage } from './components/AuthPage'
@@ -19,6 +19,13 @@ type Message = {
   text?: string
   attachment?: string
   reactions?: string[]
+}
+
+type Community = {
+  id: string
+  name: string
+  slug: string
+  iconUrl: string
 }
 
 const initialMessages: Message[] = [
@@ -75,8 +82,12 @@ function App() {
   const [privateVoiceChannels, setPrivateVoiceChannels] = useState<string[]>([])
   const [channelName, setChannelName] = useState('')
   const [channelType, setChannelType] = useState<'text' | 'voice'>('text')
-  const [serverVisible, setServerVisible] = useState(true)
   const [removedChannels, setRemovedChannels] = useState<string[]>([])
+  const [community, setCommunity] = useState<Community | null>(null)
+  const [showCommunityModal, setShowCommunityModal] = useState(false)
+  const [communityName, setCommunityName] = useState('')
+  const [communityError, setCommunityError] = useState<string | null>(null)
+  const [communityLoading, setCommunityLoading] = useState(false)
 
   useEffect(() => {
     const supabase = getSupabaseClient()
@@ -139,6 +150,46 @@ function App() {
     setShowChannelModal(true)
   }
 
+  function communityIcon(name: string) {
+    const initial = name.trim().charAt(0).toUpperCase() || 'K'
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" rx="32" fill="#1b8bff"/><path d="M38 31h17v27l25-27h22L75 63l28 34H81L55 69v28H38z" fill="#fff"/><circle cx="99" cy="29" r="15" fill="#ff7f6e"/><text x="99" y="35" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#10213d">${initial}</text></svg>`
+    return `data:image/svg+xml,${encodeURIComponent(svg)}`
+  }
+
+  async function createCommunity() {
+    const name = communityName.trim()
+    if (!name || !currentUser) return
+    setCommunityLoading(true)
+    setCommunityError(null)
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    const supabase = getSupabaseClient()
+    const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } }
+    const apiUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:4000'
+
+    try {
+      const response = await fetch(`${apiUrl}/api/servers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-auth-subject': session?.user.id || currentUser.id,
+          'x-auth-email': currentUser.email,
+          'x-auth-display-name': currentUser.displayName,
+          'x-auth-username': currentUser.username
+        },
+        body: JSON.stringify({ name, slug, iconUrl: communityIcon(name) })
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Could not create community.')
+      setCommunity(result)
+      setCommunityName('')
+      setShowCommunityModal(false)
+    } catch (error) {
+      setCommunityError(error instanceof Error ? error.message : 'Could not connect to the community API.')
+    } finally {
+      setCommunityLoading(false)
+    }
+  }
+
   function createPrivateChannel() {
     const name = channelName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-')
     if (!name) return
@@ -190,22 +241,20 @@ function App() {
       <aside className="server-rail">
         <BrandMark />
         <div className="rail-divider" />
-        {serverVisible && (
+        {community && (
           <button
             className="server-icon active"
-            aria-label="KHTALK Community"
+            aria-label={community.name}
             onContextMenu={(event) => {
               event.preventDefault()
               event.stopPropagation()
               setCustomMenu({ x: event.clientX, y: event.clientY })
             }}
           >
-            <BrandMark small />
+            <img src={community.iconUrl} alt="" />
           </button>
         )}
-        <button className="server-icon" aria-label="Design club"><Sparkles size={20} /></button>
-        <button className="server-icon" aria-label="Study circle"><span className="server-letter">S</span></button>
-        <button className="server-icon add" aria-label="Create server" onClick={() => requestPrivateChannel('text')}>
+        <button className="server-icon add" aria-label="Create community" onClick={() => { setCommunityError(null); setShowCommunityModal(true) }}>
           <Plus size={20} />
         </button>
         <div className="rail-spacer" />
@@ -214,7 +263,7 @@ function App() {
 
       <aside className={`channel-sidebar ${mobilePanel === 'channels' ? 'mobile-open' : ''}`}>
         <div className="server-heading">
-          <span>KHTALK Community</span>
+          <span>{community?.name || 'Your communities'}</span>
           <ChevronDown size={16} />
         </div>
         <div className="channel-scroll">
@@ -426,8 +475,8 @@ function App() {
       {mobilePanel && <button className="mobile-backdrop" onClick={() => setMobilePanel(null)} aria-label="Close menu" />}
       {customMenu && (
         <div className="server-context-menu" style={{ left: customMenu.x, top: customMenu.y }} onClick={(event) => event.stopPropagation()}>
-          <strong>KHTALK Community</strong>
-          <button onClick={() => { setServerVisible(false); setCustomMenu(null) }}>
+          <strong>{community?.name || 'Community'}</strong>
+            <button onClick={() => { setCommunity(null); setCustomMenu(null) }}>
             <Trash2 size={15} /> Delete server
           </button>
         </div>
@@ -448,6 +497,16 @@ function App() {
           setName={setChannelName}
           onClose={() => setShowChannelModal(false)}
           onCreate={createPrivateChannel}
+        />
+      )}
+      {showCommunityModal && (
+        <CreateCommunityModal
+          name={communityName}
+          error={communityError}
+          loading={communityLoading}
+          setName={setCommunityName}
+          onClose={() => setShowCommunityModal(false)}
+          onCreate={createCommunity}
         />
       )}
       {channelToDelete && (
@@ -600,6 +659,48 @@ function PrivateChannelModal({
         </div>
         <button className="primary-button" disabled={!name.trim()} onClick={onCreate}>
           Create {type} channel <ChevronRight size={16} />
+        </button>
+      </section>
+    </div>
+  )
+}
+
+function CreateCommunityModal({
+  name,
+  error,
+  loading,
+  setName,
+  onClose,
+  onCreate
+}: {
+  name: string
+  error: string | null
+  loading: boolean
+  setName: (name: string) => void
+  onClose: () => void
+  onCreate: () => void
+}) {
+  return (
+    <div className="modal-backdrop">
+      <section className="dialog community-dialog" role="dialog" aria-modal="true" aria-labelledby="community-title">
+        <button className="dialog-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        <div className="community-art" aria-hidden="true"><BrandMark small /></div>
+        <h2 id="community-title">Create a community</h2>
+        <p>Build a place for your friends, team, or interest group.</p>
+        <label>
+          Community name
+          <input
+            autoFocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => event.key === 'Enter' && onCreate()}
+            placeholder="My awesome community"
+            maxLength={80}
+          />
+        </label>
+        {error && <div className="modal-error" role="alert">{error}</div>}
+        <button className="primary-button" disabled={loading || !name.trim()} onClick={onCreate}>
+          {loading ? 'Creating...' : 'Create community'} <ChevronRight size={16} />
         </button>
       </section>
     </div>
