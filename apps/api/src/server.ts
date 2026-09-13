@@ -56,6 +56,7 @@ await app.register(cors, {
 await app.register(rateLimit, { max: 120, timeWindow: '1 minute' })
 await app.register(websocket)
 
+app.get('/', async () => ({ name: 'KHTALK API', status: 'ok', message: 'API is running' }))
 app.get('/health', async () => ({ name: 'KHTALK API', status: 'ok', timestamp: new Date().toISOString() }))
 
 app.post('/api/servers', { preHandler: authenticate }, async (request, reply) => {
