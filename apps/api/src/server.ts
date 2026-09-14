@@ -139,7 +139,14 @@ declare module 'fastify' {
 
 const configuredWebOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5173'
 await app.register(cors, {
-  origin: [configuredWebOrigin, 'https://khtalk-web-git-main-lilysources-projects.vercel.app', 'http://localhost:5173', 'http://localhost:5174'],
+  origin: [
+    configuredWebOrigin,
+    /^https:\/\/khtalk(?:-[a-z0-9]+)?-lilysources-projects\.vercel\.app$/,
+    'https://khtalk-web.vercel.app',
+    'https://khtalk-web-git-main-lilysources-projects.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:5174'
+  ],
   credentials: true
 })
 await app.register(rateLimit, { max: 120, timeWindow: '1 minute' })
