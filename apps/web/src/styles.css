@@ -353,11 +353,14 @@
   gap: 3px;
   animation: khtalkFadeIn 0.15s ease-out;
   backdrop-filter: blur(8px);
+  max-height: calc(100vh - 86px);
+  overflow-y: auto;
 }
 .discord-dropdown-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 12px;
   width: 100%;
   padding: 9px 12px;
   border-radius: 6px;
@@ -372,6 +375,32 @@
   background: rgba(23, 135, 255, 0.15);
   color: #ffffff;
 }
+.discord-dropdown-item > svg { flex: 0 0 auto; color: #c4c8d3; }
+.discord-dropdown-item:hover > svg { color: currentColor; }
+.discord-dropdown-toggle { justify-content: flex-start; }
+.discord-dropdown-toggle .menu-toggle { margin-left: auto; }
+.menu-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 26px;
+  height: 16px;
+  padding: 2px;
+  border: 1px solid #79808e;
+  border-radius: 5px;
+  background: #3b3e48;
+  transition: background .18s ease, border-color .18s ease;
+}
+.menu-toggle i {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: #bfc4cf;
+  transition: transform .18s ease, background .18s ease;
+}
+.menu-toggle.active { border-color: #4ca8ff; background: #176fcb; }
+.menu-toggle.active i { transform: translateX(10px); background: #fff; }
 .discord-dropdown-item.primary {
   color: #38bdf8;
   font-weight: 600;

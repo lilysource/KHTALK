@@ -4,7 +4,8 @@ import {
   Download, FileText, Gift, Hash, Headphones, Menu, Mic,
   MoreHorizontal, Pin, Plus, Search, Send, Settings, Smile,
   Users, Volume2, X, Trash2, LockKeyhole, LogOut, Check, Pencil,
-  ShieldCheck, Mail, KeyRound, HelpCircle, UserRound, BellRing, Palette, Eye
+  ShieldCheck, Mail, KeyRound, HelpCircle, UserRound, BellRing, Palette, Eye,
+  UserPlus, FolderPlus, CalendarPlus, Shapes, EyeOff, Copy, Gem
 } from 'lucide-react'
 import type { User } from '@supabase/supabase-js'
 import { useChatStore } from './stores/useChatStore'
@@ -63,6 +64,7 @@ function App() {
   const [showServerDropdown, setShowServerDropdown] = useState(false)
   const [channelName, setChannelName] = useState('')
   const [channelType, setChannelType] = useState<'text' | 'voice'>('text')
+  const [hideMutedChannels, setHideMutedChannels] = useState(false)
 
   // Communities State & Persistence (Clean Real Data only, no fake mock users/communities)
   const [communities, setCommunities] = useState<Community[]>(() => {
@@ -516,15 +518,35 @@ function App() {
             <div className="discord-server-dropdown" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                className="discord-dropdown-item primary"
+                className="discord-dropdown-item"
+                onClick={() => setShowServerDropdown(false)}
+              >
+                <Gem size={17} />
+                <span>Server Boost</span>
+              </button>
+
+              <button
+                type="button"
+                className="discord-dropdown-item"
+                onClick={() => setShowServerDropdown(false)}
+              >
+                <UserPlus size={17} />
+                <span>Invite to Server</span>
+              </button>
+
+              <button
+                type="button"
+                className="discord-dropdown-item"
                 onClick={() => {
                   setShowServerDropdown(false)
                   setShowCommunitySettings(true)
                 }}
               >
+                <Settings size={17} />
                 <span>Community Settings</span>
-                <Settings size={15} />
               </button>
+
+              <div className="discord-dropdown-divider" />
 
               <button
                 type="button"
@@ -534,20 +556,78 @@ function App() {
                   requestPrivateChannel('text')
                 }}
               >
+                <Plus size={17} />
                 <span>Create Channel</span>
-                <Plus size={16} />
               </button>
 
               <button
                 type="button"
                 className="discord-dropdown-item"
+                onClick={() => setShowServerDropdown(false)}
+              >
+                <FolderPlus size={17} />
+                <span>Create Category</span>
+              </button>
+
+              <button
+                type="button"
+                className="discord-dropdown-item"
+                onClick={() => setShowServerDropdown(false)}
+              >
+                <CalendarPlus size={17} />
+                <span>Create Event</span>
+              </button>
+
+              <button
+                type="button"
+                className="discord-dropdown-item"
+                onClick={() => setShowServerDropdown(false)}
+              >
+                <Shapes size={17} />
+                <span>App Directory</span>
+              </button>
+
+              <div className="discord-dropdown-divider" />
+
+              <button type="button" className="discord-dropdown-item" onClick={() => setShowServerDropdown(false)}>
+                <Bell size={17} />
+                <span>Notification Settings</span>
+              </button>
+
+              <button type="button" className="discord-dropdown-item" onClick={() => setShowServerDropdown(false)}>
+                <ShieldCheck size={17} />
+                <span>Privacy Settings</span>
+              </button>
+
+              <div className="discord-dropdown-divider" />
+
+              <button type="button" className="discord-dropdown-item" onClick={() => setShowServerDropdown(false)}>
+                <Pencil size={17} />
+                <span>Edit Per-server Profile</span>
+              </button>
+
+              <button
+                type="button"
+                className="discord-dropdown-item discord-dropdown-toggle"
+                onClick={() => setHideMutedChannels((hidden) => !hidden)}
+              >
+                <EyeOff size={17} />
+                <span>Hide Muted Channels</span>
+                <span className={`menu-toggle ${hideMutedChannels ? 'active' : ''}`} aria-hidden="true"><i /></span>
+              </button>
+
+              <div className="discord-dropdown-divider" />
+
+              <button
+                type="button"
+                className="discord-dropdown-item"
                 onClick={() => {
+                  void navigator.clipboard?.writeText(community.id)
                   setShowServerDropdown(false)
-                  requestPrivateChannel('voice')
                 }}
               >
-                <span>Create Voice Channel</span>
-                <Volume2 size={16} />
+                <Copy size={17} />
+                <span>Copy Server ID</span>
               </button>
 
               <div className="discord-dropdown-divider" />
@@ -561,7 +641,7 @@ function App() {
                 }}
               >
                 <span>Delete Community</span>
-                <Trash2 size={15} />
+                <Trash2 size={17} />
               </button>
             </div>
           )}
