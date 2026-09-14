@@ -589,10 +589,7 @@ function App() {
               <button
                 type="button"
                 className="discord-dropdown-item"
-                onClick={() => {
-                  setShowServerDropdown(false)
-                  setShowCategoryModal(true)
-                }}
+                onClick={() => setShowServerDropdown(false)}
               >
                 <Gem size={17} />
                 <span>Premium</span>
@@ -601,11 +598,7 @@ function App() {
               <button
                 type="button"
                 className="discord-dropdown-item"
-                onClick={() => {
-                  setShowServerDropdown(false)
-                  setEventChannelName(textChannels[0]?.name || '')
-                  setShowEventModal(true)
-                }}
+                onClick={() => setShowServerDropdown(false)}
               >
                 <UserPlus size={17} />
                 <span>Invite to Server</span>
@@ -640,7 +633,10 @@ function App() {
               <button
                 type="button"
                 className="discord-dropdown-item"
-                onClick={() => setShowServerDropdown(false)}
+                onClick={() => {
+                  setShowServerDropdown(false)
+                  setShowCategoryModal(true)
+                }}
               >
                 <FolderPlus size={17} />
                 <span>Create Category</span>
@@ -649,7 +645,11 @@ function App() {
               <button
                 type="button"
                 className="discord-dropdown-item"
-                onClick={() => setShowServerDropdown(false)}
+                onClick={() => {
+                  setShowServerDropdown(false)
+                  setEventChannelName(textChannels[0]?.name || '')
+                  setShowEventModal(true)
+                }}
               >
                 <CalendarPlus size={17} />
                 <span>Create Event</span>
