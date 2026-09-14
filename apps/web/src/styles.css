@@ -2206,6 +2206,13 @@
   text-overflow: ellipsis;
 }
 .message-reply-reference strong { color: #acd4ff; }
+.message-row.system-message {
+  margin-top: 8px;
+  border: 1px solid rgba(66, 181, 255, .2);
+  background: rgba(22, 135, 255, .06);
+}
+.system-message .message-content > p { color: #b9d9f6; }
+.system-message .message-meta strong { color: #54b7ff !important; }
 .message-tools button {
   display: inline-flex;
   align-items: center;
@@ -2246,6 +2253,19 @@
   color: #86a9d2;
 }
 .replying-banner button:hover { background: #173b65; color: #fff; }
+.dialog select {
+  width: 100%;
+  height: 40px;
+  margin-top: 7px;
+  padding: 0 11px;
+  border: 1px solid #285583;
+  border-radius: 7px;
+  outline: 0;
+  background: #0a2343;
+  color: #e9f3ff;
+  font-size: 12px;
+}
+.dialog select:focus { border-color: #36a6ff; box-shadow: 0 0 0 3px rgba(54, 166, 255, .15); }
 
 /* Input fields — Discord-style smooth focus ring */
 .account-card input,

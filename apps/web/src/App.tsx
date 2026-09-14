@@ -13,7 +13,7 @@ import { AuthPage } from './components/AuthPage'
 import { approveQrSession, clearApiSession, getQrTokenFromLocation, getSupabaseClient, mapSupabaseUserToProfile, syncApiSession } from './lib/supabase'
 import { UserStatus } from './types/auth'
 import {
-  Community, Role, DiscordTemplate,
+  Community, CommunityEvent, Role, DiscordTemplate,
   DEFAULT_EVERYONE_PERMISSIONS, DEFAULT_ADMIN_PERMISSIONS, DEFAULT_MOD_PERMISSIONS
 } from './types/community'
 import { CreateCommunityModal } from './components/CreateCommunityModal'
@@ -30,6 +30,7 @@ type Message = {
   attachment?: string
   reactions?: string[]
   replyTo?: { name: string; text: string }
+  system?: boolean
 }
 
 
@@ -65,6 +66,13 @@ function App() {
   const [channelName, setChannelName] = useState('')
   const [channelType, setChannelType] = useState<'text' | 'voice'>('text')
   const [hideMutedChannels, setHideMutedChannels] = useState(false)
+  const [showCategoryModal, setShowCategoryModal] = useState(false)
+  const [showEventModal, setShowEventModal] = useState(false)
+  const [categoryName, setCategoryName] = useState('')
+  const [eventName, setEventName] = useState('')
+  const [eventDescription, setEventDescription] = useState('')
+  const [eventStartsAt, setEventStartsAt] = useState('')
+  const [eventChannelName, setEventChannelName] = useState('')
 
   // Communities State & Persistence (Clean Real Data only, no fake mock users/communities)
   const [communities, setCommunities] = useState<Community[]>(() => {
@@ -200,6 +208,35 @@ function App() {
   const currentChannelKey = community ? `${community.id}_${activeChannel}` : activeChannel
   const currentMessages = messagesByChannel[currentChannelKey] || []
 
+  useEffect(() => {
+    const announceStartedEvents = () => {
+      const now = Date.now()
+      communities.forEach((candidate) => {
+        candidate.events?.filter((event) => !event.announced && new Date(event.startsAt).getTime() <= now).forEach((event) => {
+          const eventMessage: Message = {
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            name: 'KHTALK Events',
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            avatar: 'K',
+            color: 'cyan',
+            text: `Event started: ${event.name}${event.description ? ` - ${event.description}` : ''}`,
+            system: true
+          }
+          setMessagesByChannel((previous) => ({
+            ...previous,
+            [`${candidate.id}_${event.channelName}`]: [...(previous[`${candidate.id}_${event.channelName}`] || []), eventMessage]
+          }))
+          setCommunities((previous) => previous.map((communityItem) => communityItem.id === candidate.id
+            ? { ...communityItem, events: communityItem.events?.map((storedEvent) => storedEvent.id === event.id ? { ...storedEvent, announced: true } : storedEvent) }
+            : communityItem))
+        })
+      })
+    }
+    announceStartedEvents()
+    const interval = window.setInterval(announceStartedEvents, 1000)
+    return () => window.clearInterval(interval)
+  }, [communities])
+
   function sendMessage() {
     const text = draft.trim()
     if (!text) return
@@ -237,6 +274,33 @@ function App() {
     if (!currentUser) return
     setChannelType(type)
     setShowChannelModal(true)
+  }
+
+  function createCategory() {
+    const name = categoryName.trim()
+    if (!name || !community) return
+    const category = { id: `category_${Date.now()}`, name: name.toUpperCase(), position: community.categories?.length || 0 }
+    handleUpdateCommunity({ ...community, categories: [...(community.categories || []), category] })
+    setCategoryName('')
+    setShowCategoryModal(false)
+  }
+
+  function createEvent() {
+    if (!community || !eventName.trim() || !eventStartsAt || !eventChannelName) return
+    const event: CommunityEvent = {
+      id: `event_${Date.now()}`,
+      name: eventName.trim(),
+      description: eventDescription.trim() || undefined,
+      startsAt: new Date(eventStartsAt).toISOString(),
+      channelName: eventChannelName,
+      announced: false
+    }
+    handleUpdateCommunity({ ...community, events: [...(community.events || []), event] })
+    setEventName('')
+    setEventDescription('')
+    setEventStartsAt('')
+    setEventChannelName('')
+    setShowEventModal(false)
   }
 
   // Create a new Community from Discord Template
@@ -419,6 +483,12 @@ function App() {
   }
 
   const textChannels = community ? community.channels.filter((c) => c.type === 'text') : []
+  const textCategoryNames = community
+    ? Array.from(new Set([
+      ...(community.categories || []).map((category) => category.name),
+      ...textChannels.map((channel) => channel.category || 'TEXT CHANNELS')
+    ]))
+    : []
   const voiceChannels = community ? community.channels.filter((c) => c.type === 'voice') : []
 
   return (
@@ -519,7 +589,10 @@ function App() {
               <button
                 type="button"
                 className="discord-dropdown-item"
-                onClick={() => setShowServerDropdown(false)}
+                onClick={() => {
+                  setShowServerDropdown(false)
+                  setShowCategoryModal(true)
+                }}
               >
                 <Gem size={17} />
                 <span>Premium</span>
@@ -528,7 +601,11 @@ function App() {
               <button
                 type="button"
                 className="discord-dropdown-item"
-                onClick={() => setShowServerDropdown(false)}
+                onClick={() => {
+                  setShowServerDropdown(false)
+                  setEventChannelName(textChannels[0]?.name || '')
+                  setShowEventModal(true)
+                }}
               >
                 <UserPlus size={17} />
                 <span>Invite to Server</span>
@@ -640,27 +717,31 @@ function App() {
 
         <div className="channel-scroll">
           {/* TEXT CHANNELS */}
-          <div className="channel-category">
-            <span>TEXT CHANNELS</span>
-            <button aria-label="Create text channel" onClick={() => requestPrivateChannel('text')}>
-              <Plus size={14} />
-            </button>
-          </div>
-          {textChannels.map((channel) => (
-            <ChannelRow
-              key={channel.id}
-              name={channel.name}
-              active={activeChannel === channel.name}
-              onContextMenu={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                setChannelMenu({ name: channel.name, x: event.clientX, y: event.clientY })
-              }}
-              onClick={() => {
-                setActiveChannel(channel.name)
-                setMobilePanel(null)
-              }}
-            />
+          {textCategoryNames.map((categoryName) => (
+            <div key={categoryName} className="channel-group">
+              <div className="channel-category">
+                <span>{categoryName}</span>
+                <button aria-label={`Create channel in ${categoryName}`} onClick={() => requestPrivateChannel('text')}>
+                  <Plus size={14} />
+                </button>
+              </div>
+              {textChannels.filter((channel) => (channel.category || 'TEXT CHANNELS') === categoryName).map((channel) => (
+                <ChannelRow
+                  key={channel.id}
+                  name={channel.name}
+                  active={activeChannel === channel.name}
+                  onContextMenu={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setChannelMenu({ name: channel.name, x: event.clientX, y: event.clientY })
+                  }}
+                  onClick={() => {
+                    setActiveChannel(channel.name)
+                    setMobilePanel(null)
+                  }}
+                />
+              ))}
+            </div>
           ))}
 
           {/* VOICE CHANNELS */}
@@ -865,6 +946,31 @@ function App() {
         />
       )}
 
+      {showCategoryModal && (
+        <CreateCategoryModal
+          name={categoryName}
+          setName={setCategoryName}
+          onClose={() => setShowCategoryModal(false)}
+          onCreate={createCategory}
+        />
+      )}
+
+      {showEventModal && community && (
+        <CreateEventModal
+          name={eventName}
+          description={eventDescription}
+          startsAt={eventStartsAt}
+          channelName={eventChannelName}
+          channels={textChannels}
+          setName={setEventName}
+          setDescription={setEventDescription}
+          setStartsAt={setEventStartsAt}
+          setChannelName={setEventChannelName}
+          onClose={() => setShowEventModal(false)}
+          onCreate={createEvent}
+        />
+      )}
+
       {/* 100% Discord Create Community Modal */}
       {showCommunityModal && (
         <CreateCommunityModal
@@ -940,7 +1046,7 @@ function MessageRow({
   onDelete: () => void
 }) {
   return (
-    <article className="message-row">
+    <article className={`message-row ${message.system ? 'system-message' : ''}`}>
       <Avatar member={message} />
       <div className="message-content">
         <div className="message-meta">
@@ -1100,6 +1206,92 @@ function CommunityMembersSidebar({
         </section>
       )}
     </aside>
+  )
+}
+
+function CreateCategoryModal({
+  name,
+  setName,
+  onClose,
+  onCreate
+}: {
+  name: string
+  setName: (name: string) => void
+  onClose: () => void
+  onCreate: () => void
+}) {
+  return (
+    <div className="modal-backdrop">
+      <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="category-title">
+        <button className="dialog-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        <div className="dialog-icon"><FolderPlus size={21} /></div>
+        <h2 id="category-title">Create Category</h2>
+        <p>Create a category to organize text channels in this community.</p>
+        <label>
+          Category name
+          <input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. PROJECTS" />
+        </label>
+        <button className="primary-button" onClick={onCreate} disabled={!name.trim()}>Create Category <ChevronRight size={16} /></button>
+      </section>
+    </div>
+  )
+}
+
+function CreateEventModal({
+  name,
+  description,
+  startsAt,
+  channelName,
+  channels,
+  setName,
+  setDescription,
+  setStartsAt,
+  setChannelName,
+  onClose,
+  onCreate
+}: {
+  name: string
+  description: string
+  startsAt: string
+  channelName: string
+  channels: { name: string }[]
+  setName: (name: string) => void
+  setDescription: (description: string) => void
+  setStartsAt: (startsAt: string) => void
+  setChannelName: (channelName: string) => void
+  onClose: () => void
+  onCreate: () => void
+}) {
+  return (
+    <div className="modal-backdrop">
+      <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="event-title">
+        <button className="dialog-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        <div className="dialog-icon"><CalendarPlus size={21} /></div>
+        <h2 id="event-title">Create Event</h2>
+        <p>When the event starts, KHTALK will post a system message in the selected channel for community members.</p>
+        <label>
+          Event name
+          <input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Community meeting" />
+        </label>
+        <label>
+          Description
+          <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What is this event about?" />
+        </label>
+        <label>
+          Start date and time
+          <input type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
+        </label>
+        <label>
+          Announcement channel
+          <select value={channelName} onChange={(event) => setChannelName(event.target.value)}>
+            {channels.map((channel) => <option key={channel.name} value={channel.name}>#{channel.name}</option>)}
+          </select>
+        </label>
+        <button className="primary-button" onClick={onCreate} disabled={!name.trim() || !startsAt || !channelName}>
+          Create Event <ChevronRight size={16} />
+        </button>
+      </section>
+    </div>
   )
 }
 

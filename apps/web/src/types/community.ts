@@ -51,6 +51,21 @@ export interface CommunityChannel {
   topic?: string
 }
 
+export interface CommunityCategory {
+  id: string
+  name: string
+  position: number
+}
+
+export interface CommunityEvent {
+  id: string
+  name: string
+  description?: string
+  startsAt: string
+  channelName: string
+  announced: boolean
+}
+
 export interface Community {
   id: string
   name: string
@@ -59,6 +74,8 @@ export interface Community {
   backgroundUrl?: string | null
   ownerId: string
   channels: CommunityChannel[]
+  categories?: CommunityCategory[]
+  events?: CommunityEvent[]
   roles: Role[]
   members: CommunityMember[]
 }
