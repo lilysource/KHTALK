@@ -58,6 +58,7 @@ function App() {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
   const [customMenu, setCustomMenu] = useState<{ x: number; y: number } | null>(null)
   const [channelMenu, setChannelMenu] = useState<{ name: string; x: number; y: number } | null>(null)
+  const [categoryMenu, setCategoryMenu] = useState<{ id: string; name: string; x: number; y: number } | null>(null)
   const [channelToDelete, setChannelToDelete] = useState<string | null>(null)
   const [showChannelModal, setShowChannelModal] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
@@ -69,6 +70,7 @@ function App() {
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [showEventModal, setShowEventModal] = useState(false)
   const [categoryName, setCategoryName] = useState('')
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null)
   const [eventName, setEventName] = useState('')
   const [eventDescription, setEventDescription] = useState('')
   const [eventStartsAt, setEventStartsAt] = useState('')
@@ -279,10 +281,32 @@ function App() {
   function createCategory() {
     const name = categoryName.trim()
     if (!name || !community) return
-    const category = { id: `category_${Date.now()}`, name: name.toUpperCase(), position: community.categories?.length || 0 }
-    handleUpdateCommunity({ ...community, categories: [...(community.categories || []), category] })
+    const normalizedName = name.toUpperCase()
+    const categories = community.categories || []
+    if (editingCategoryId) {
+      handleUpdateCommunity({
+        ...community,
+        categories: categories.map((category) => category.id === editingCategoryId ? { ...category, name: normalizedName } : category),
+        channels: community.channels.map((channel) => channel.category === categories.find((category) => category.id === editingCategoryId)?.name ? { ...channel, category: normalizedName } : channel)
+      })
+    } else {
+      const category = { id: `category_${Date.now()}`, name: normalizedName, position: categories.length }
+      handleUpdateCommunity({ ...community, categories: [...categories, category] })
+    }
     setCategoryName('')
+    setEditingCategoryId(null)
+    setCategoryMenu(null)
     setShowCategoryModal(false)
+  }
+
+  function deleteCategory() {
+    if (!community || !categoryMenu) return
+    handleUpdateCommunity({
+      ...community,
+      categories: (community.categories || []).filter((category) => category.id !== categoryMenu.id),
+      channels: community.channels.map((channel) => channel.category === categoryMenu.name ? { ...channel, category: 'TEXT CHANNELS' } : channel)
+    })
+    setCategoryMenu(null)
   }
 
   function createEvent() {
@@ -499,6 +523,7 @@ function App() {
       onClick={() => {
         setCustomMenu(null)
         setChannelMenu(null)
+        setCategoryMenu(null)
         setShowUserMenu(false)
         setShowServerDropdown(false)
       }}
@@ -635,6 +660,8 @@ function App() {
                 className="discord-dropdown-item"
                 onClick={() => {
                   setShowServerDropdown(false)
+                  setEditingCategoryId(null)
+                  setCategoryName('')
                   setShowCategoryModal(true)
                 }}
               >
@@ -719,7 +746,16 @@ function App() {
           {/* TEXT CHANNELS */}
           {textCategoryNames.map((categoryName) => (
             <div key={categoryName} className="channel-group">
-              <div className="channel-category">
+              <div
+                className="channel-category"
+                onContextMenu={(event) => {
+                  const category = community?.categories?.find((item) => item.name === categoryName)
+                  if (!category) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setCategoryMenu({ id: category.id, name: category.name, x: event.clientX, y: event.clientY })
+                }}
+              >
                 <span>{categoryName}</span>
                 <button aria-label={`Create channel in ${categoryName}`} onClick={() => requestPrivateChannel('text')}>
                   <Plus size={14} />
@@ -930,6 +966,23 @@ function App() {
           <strong>#{channelMenu.name}</strong>
           <button onClick={() => requestDeleteChannel(channelMenu.name)}>
             <Trash2 size={15} /> Delete channel
+          </button>
+        </div>
+      )}
+
+      {categoryMenu && (
+        <div className="server-context-menu" style={{ left: categoryMenu.x, top: categoryMenu.y }} onClick={(event) => event.stopPropagation()}>
+          <strong>{categoryMenu.name}</strong>
+          <button onClick={() => {
+            setCategoryName(categoryMenu.name)
+            setEditingCategoryId(categoryMenu.id)
+            setShowCategoryModal(true)
+            setCategoryMenu(null)
+          }}>
+            <Pencil size={15} /> Edit Category
+          </button>
+          <button onClick={deleteCategory}>
+            <Trash2 size={15} /> Delete Category
           </button>
         </div>
       )}
