@@ -5,7 +5,7 @@ import {
   MoreHorizontal, Pin, Plus, Search, Send, Settings, Smile,
   Users, Volume2, X, Trash2, LockKeyhole, LogOut, Check, Pencil,
   ShieldCheck, Mail, KeyRound, HelpCircle, UserRound, BellRing, Palette, Eye,
-  UserPlus, FolderPlus, CalendarPlus, Shapes, EyeOff, Copy, Gem
+  UserPlus, FolderPlus, CalendarPlus, EyeOff, Copy, Gem
 } from 'lucide-react'
 import type { User } from '@supabase/supabase-js'
 import { useChatStore } from './stores/useChatStore'
@@ -522,7 +522,7 @@ function App() {
                 onClick={() => setShowServerDropdown(false)}
               >
                 <Gem size={17} />
-                <span>Server Boost</span>
+                <span>Premium</span>
               </button>
 
               <button
@@ -576,15 +576,6 @@ function App() {
               >
                 <CalendarPlus size={17} />
                 <span>Create Event</span>
-              </button>
-
-              <button
-                type="button"
-                className="discord-dropdown-item"
-                onClick={() => setShowServerDropdown(false)}
-              >
-                <Shapes size={17} />
-                <span>App Directory</span>
               </button>
 
               <div className="discord-dropdown-divider" />
