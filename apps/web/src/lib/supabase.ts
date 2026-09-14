@@ -56,6 +56,77 @@ export function resetSupabaseClient() {
   clientInstance = null
 }
 
+function getApiUrl() {
+  return (import.meta.env.VITE_API_URL?.trim() || 'https://khtalk.onrender.com').replace(/\/+$/, '')
+}
+
+export async function createQrSession(): Promise<{ token: string; expiresIn: number } | null> {
+  try {
+    const response = await fetch(`${getApiUrl()}/api/auth/qr/create`, { method: 'POST' })
+    if (!response.ok) return null
+    return response.json() as Promise<{ token: string; expiresIn: number }>
+  } catch {
+    return null
+  }
+}
+
+export async function approveQrSession(token: string, accessToken: string, refreshToken: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${getApiUrl()}/api/auth/qr/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, accessToken, refreshToken })
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+export async function pollQrSession(token: string): Promise<
+  { status: 'pending' | 'expired' | 'unavailable' } | { status: 'approved'; accessToken: string; refreshToken: string }
+> {
+  try {
+    const response = await fetch(`${getApiUrl()}/api/auth/qr/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    })
+    if (!response.ok) return { status: 'unavailable' }
+    return response.json()
+  } catch {
+    return { status: 'unavailable' }
+  }
+}
+
+export async function syncApiSession(accessToken: string): Promise<boolean> {
+  const apiUrl = getApiUrl()
+  try {
+    const response = await fetch(`${apiUrl}/api/auth/session`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken })
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+export async function clearApiSession() {
+  const apiUrl = getApiUrl()
+  try {
+    await fetch(`${apiUrl}/api/auth/signout`, { method: 'POST', credentials: 'include' })
+  } catch {
+    // Supabase sign-out still clears the browser session if the API is offline.
+  }
+}
+
+export function getQrTokenFromLocation() {
+  return new URLSearchParams(window.location.search).get('qr')
+}
+
 export function mapSupabaseUserToProfile(user: User): UserProfile {
   const meta = user.user_metadata || {}
   const displayName = meta.display_name || meta.name || user.email?.split('@')[0] || 'Member'

@@ -19,10 +19,12 @@ npm run dev:web
 
 ## Run the API
 
-1. Copy `.env.example` to `.env` and set `DATABASE_URL`.
+1. Copy `.env.example` to `.env` and set `DATABASE_URL`, `SUPABASE_URL`, and `SUPABASE_ANON_KEY`.
 2. Install dependencies with `npm install`.
 3. Generate the Prisma client with `npm run db:generate`.
 4. Apply the development schema with `npm run db:push`.
 5. Start the API with `npm run dev:api`.
 
-The web shell currently includes development fallback data while the authenticated API client is being connected. Production authentication should use Supabase Auth and pass verified server-side claims into the API; no secret keys belong in the web bundle.
+The web app uses Supabase Auth for login and account creation. After authentication, it exchanges the Supabase access token with `POST /api/auth/session`; the API validates the token and sets an HTTP-only `khtalk_access_token` cookie. Protected API requests must use `credentials: 'include'`. The browser only needs the public `VITE_SUPABASE_ANON_KEY`; never expose a service-role key in the web bundle.
+
+QR login uses short-lived one-time sessions. The API deployment must have `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `WEB_ORIGIN` set, and both the web app and API must be redeployed after QR changes.

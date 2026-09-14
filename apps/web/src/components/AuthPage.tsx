@@ -1,11 +1,17 @@
 import { useState, useEffect } from 'react'
 import {
   Lock, Mail, User, Eye, EyeOff, AlertCircle, CheckCircle2,
-  Loader2, ChevronRight, KeyRound, ArrowLeft
+  Loader2, ChevronRight, KeyRound, ArrowLeft, RefreshCw
 } from 'lucide-react'
+import { QRCodeCanvas } from 'qrcode.react'
 import {
   getSupabaseClient,
-  mapSupabaseUserToProfile
+  approveQrSession,
+  createQrSession,
+  getQrTokenFromLocation,
+  mapSupabaseUserToProfile,
+  pollQrSession,
+  syncApiSession
 } from '../lib/supabase'
 import { useChatStore } from '../stores/useChatStore'
 
@@ -25,11 +31,71 @@ export function AuthPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
+  const [qrToken, setQrToken] = useState<string | null>(null)
+  const [qrExpired, setQrExpired] = useState(false)
+  const [qrUnavailable, setQrUnavailable] = useState(false)
+  const scannedQrToken = getQrTokenFromLocation()
 
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [canResendEmail, setCanResendEmail] = useState(false)
+
+  async function refreshQrCode() {
+    const session = await createQrSession()
+    setQrToken(session?.token ?? null)
+    setQrExpired(false)
+    setQrUnavailable(!session)
+  }
+
+  async function approveScannedQr(session: { access_token: string; refresh_token: string }) {
+    if (!scannedQrToken) return
+    const approved = await approveQrSession(scannedQrToken, session.access_token, session.refresh_token)
+    if (approved) {
+      window.history.replaceState({}, '', window.location.pathname)
+      setSuccessMessage('This device is connected. Return to the other device to continue.')
+    }
+  }
+
+  useEffect(() => {
+    if (!scannedQrToken) void refreshQrCode()
+  }, [scannedQrToken])
+
+  useEffect(() => {
+    if (!qrToken || scannedQrToken) return
+    let active = true
+    const checkQrStatus = async () => {
+      const result = await pollQrSession(qrToken)
+      if (!active) return
+      if (result.status === 'expired') {
+        setQrExpired(true)
+        return
+      }
+      if (result.status === 'unavailable') {
+        setQrUnavailable(true)
+        return
+      }
+      if (result.status === 'approved') {
+        const supabase = getSupabaseClient()
+        if (!supabase) return
+        const { data, error } = await supabase.auth.setSession({
+          access_token: result.accessToken,
+          refresh_token: result.refreshToken
+        })
+        if (error || !data.user || !data.session) {
+          setErrorMessage('QR sign in could not be completed. Please use your password instead.')
+          return
+        }
+        await syncApiSession(data.session.access_token)
+        setCurrentUser(mapSupabaseUserToProfile(data.user))
+      }
+    }
+    const interval = window.setInterval(() => { void checkQrStatus() }, 2000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [qrToken, scannedQrToken, setCurrentUser])
 
   useEffect(() => {
     // Check if a session already exists
@@ -38,6 +104,8 @@ export function AuthPage() {
 
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (!error && session?.user) {
+        void syncApiSession(session.access_token)
+        void approveScannedQr(session)
         setCurrentUser(mapSupabaseUserToProfile(session.user))
       }
     })
@@ -84,6 +152,8 @@ export function AuthPage() {
       }
 
       if (data.user) {
+        if (data.session) await syncApiSession(data.session.access_token)
+        if (data.session) await approveScannedQr(data.session)
         setCurrentUser(mapSupabaseUserToProfile(data.user))
       }
     } catch (err: unknown) {
@@ -183,6 +253,8 @@ export function AuthPage() {
 
       if (data.session && data.user) {
         // Email auto-confirmed / no email confirmation required
+        await syncApiSession(data.session.access_token)
+        await approveScannedQr(data.session)
         setCurrentUser(mapSupabaseUserToProfile(data.user))
       } else {
         // Confirmation email required by Supabase project settings
@@ -622,6 +694,42 @@ export function AuthPage() {
               )}
             </button>
           </form>
+        )}
+
+        {mode !== 'forgot' && (
+          <section className="auth-qr-panel" aria-labelledby="auth-qr-title">
+            <div className="auth-qr-copy">
+              <p className="auth-qr-kicker">QUICK ACCESS</p>
+              <h2 id="auth-qr-title">Log in with your phone</h2>
+              <p>{scannedQrToken ? 'Sign in on this phone to approve the other device.' : 'Scan with a phone already signed in to KHTALK.'}</p>
+            </div>
+            <div className="auth-qr-code-wrap">
+              {qrToken ? (
+                <QRCodeCanvas
+                  value={`${window.location.origin}/?qr=${qrToken}`}
+                  size={132}
+                  bgColor="#ffffff"
+                  fgColor="#071a31"
+                  level="M"
+                  includeMargin
+                  aria-label="KHTALK QR login code"
+                />
+              ) : (
+                <div className="auth-qr-placeholder">
+                  {qrUnavailable ? 'QR service unavailable' : qrExpired ? 'QR expired' : 'Loading...'}
+                </div>
+              )}
+              <button
+                type="button"
+                className="auth-qr-refresh"
+                onClick={() => void refreshQrCode()}
+                aria-label="Refresh QR code"
+                title="Refresh QR code"
+              >
+                <RefreshCw size={14} />
+              </button>
+            </div>
+          </section>
         )}
 
         <small className="auth-security-notice">

@@ -5,10 +5,15 @@ import rateLimit from '@fastify/rate-limit'
 import websocket from '@fastify/websocket'
 import { PrismaClient } from '@prisma/client'
 import { z } from 'zod'
+import { randomBytes } from 'node:crypto'
 
 const prisma = new PrismaClient()
 const app = Fastify({ logger: true })
 const sockets = new Map<string, Set<{ send: (payload: string) => void }>>()
+const qrSessions = new Map<string, { createdAt: number; accessToken?: string; refreshToken?: string }>()
+const qrSessionLifetimeMs = 2 * 60 * 1000
+const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
 
 const messageSchema = z.object({
   content: z.string().trim().min(1).max(4000),
@@ -23,23 +28,107 @@ const createServerSchema = z.object({
 })
 
 const updateServerSchema = createServerSchema.pick({ name: true, iconUrl: true, backgroundUrl: true })
+const qrTokenSchema = z.object({ token: z.string().min(32).max(128) })
+
+type SupabaseUser = {
+  id: string
+  email?: string
+  user_metadata?: { display_name?: string; username?: string }
+}
+
+async function getSupabaseUser(accessToken: string): Promise<SupabaseUser | null> {
+  if (!supabaseUrl || !supabaseAnonKey) return null
+  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${accessToken}`
+    }
+  })
+  if (!response.ok) return null
+  return response.json() as Promise<SupabaseUser>
+}
+
+function getAccessToken(request: FastifyRequest) {
+  const authorization = request.headers.authorization
+  if (authorization?.startsWith('Bearer ')) return authorization.slice(7)
+
+  const cookies = request.headers.cookie?.split(';').map((part) => part.trim()) ?? []
+  return cookies.find((cookie) => cookie.startsWith('khtalk_access_token='))?.slice('khtalk_access_token='.length)
+}
+
+async function establishApiSession(request: FastifyRequest, reply: FastifyReply) {
+  const body = z.object({ accessToken: z.string().min(1) }).safeParse(request.body)
+  if (!body.success) return reply.code(400).send({ error: 'Access token is required' })
+
+  const supabaseUser = await getSupabaseUser(body.data.accessToken)
+  if (!supabaseUser?.email) return reply.code(401).send({ error: 'Invalid Supabase session' })
+
+  reply.header(
+    'Set-Cookie',
+    `khtalk_access_token=${encodeURIComponent(body.data.accessToken)}; HttpOnly; Path=/; SameSite=${process.env.NODE_ENV === 'production' ? 'None; Secure' : 'Lax'}`
+  )
+  return reply.send({ userId: supabaseUser.id })
+}
+
+function createQrSession() {
+  const token = randomBytes(32).toString('base64url')
+  qrSessions.set(token, { createdAt: Date.now() })
+  return token
+}
+
+function getQrSession(token: string) {
+  const session = qrSessions.get(token)
+  if (!session) return null
+  if (Date.now() - session.createdAt > qrSessionLifetimeMs) {
+    qrSessions.delete(token)
+    return null
+  }
+  return session
+}
+
+async function getSessionTokens(request: FastifyRequest, reply: FastifyReply) {
+  const body = z.object({ accessToken: z.string().min(1), refreshToken: z.string().min(1) }).and(qrTokenSchema).safeParse(request.body)
+  if (!body.success) return reply.code(400).send({ error: 'QR token and session tokens are required' })
+
+  const qrSession = getQrSession(body.data.token)
+  if (!qrSession) return reply.code(410).send({ error: 'QR code expired' })
+
+  const supabaseUser = await getSupabaseUser(body.data.accessToken)
+  if (!supabaseUser?.email) return reply.code(401).send({ error: 'Invalid Supabase session' })
+
+  qrSession.accessToken = body.data.accessToken
+  qrSession.refreshToken = body.data.refreshToken
+  return reply.send({ status: 'approved' })
+}
+
+async function readQrSession(request: FastifyRequest, reply: FastifyReply) {
+  const body = qrTokenSchema.safeParse(request.body)
+  if (!body.success) return reply.code(400).send({ error: 'QR token is required' })
+
+  const qrSession = getQrSession(body.data.token)
+  if (!qrSession) return reply.send({ status: 'expired' })
+  if (!qrSession.accessToken || !qrSession.refreshToken) return reply.send({ status: 'pending' })
+
+  qrSessions.delete(body.data.token)
+  return reply.send({ status: 'approved', accessToken: qrSession.accessToken, refreshToken: qrSession.refreshToken })
+}
 
 async function authenticate(request: FastifyRequest, reply: FastifyReply) {
-  const subject = request.headers['x-auth-subject']
-  if (typeof subject !== 'string' || subject.length < 1) {
+  const accessToken = getAccessToken(request)
+  if (!accessToken) {
     return reply.code(401).send({ error: 'Authentication required' })
   }
+
+  const supabaseUser = await getSupabaseUser(accessToken)
+  if (!supabaseUser?.email) return reply.code(401).send({ error: 'Invalid authentication session' })
+
+  const metadata = supabaseUser.user_metadata ?? {}
+  const displayName = metadata.display_name || supabaseUser.email.split('@')[0]
+  const username = (metadata.username || displayName).toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 30) || `user_${supabaseUser.id.slice(0, 8)}`
+  const subject = supabaseUser.id
   let user = await prisma.user.findUnique({ where: { authSubject: subject } })
   if (!user) {
-    const email = request.headers['x-auth-email']
-    const displayName = request.headers['x-auth-display-name']
-    const username = request.headers['x-auth-username']
-    if (typeof email !== 'string' || typeof displayName !== 'string' || typeof username !== 'string') {
-      return reply.code(401).send({ error: 'User account not found' })
-    }
-    user = await prisma.user.create({
-      data: { authSubject: subject, email, displayName, username }
-    })
+    user = await prisma.user.create({ data: { authSubject: subject, email: supabaseUser.email, displayName, username } })
   }
   request.user = user
 }
@@ -50,7 +139,7 @@ declare module 'fastify' {
 
 const configuredWebOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5173'
 await app.register(cors, {
-  origin: [configuredWebOrigin, 'http://localhost:5173', 'http://localhost:5174'],
+  origin: [configuredWebOrigin, 'https://khtalk-web-git-main-lilysources-projects.vercel.app', 'http://localhost:5173', 'http://localhost:5174'],
   credentials: true
 })
 await app.register(rateLimit, { max: 120, timeWindow: '1 minute' })
@@ -58,6 +147,14 @@ await app.register(websocket)
 
 app.get('/', async () => ({ name: 'KHTALK API', status: 'ok', message: 'API is running' }))
 app.get('/health', async () => ({ name: 'KHTALK API', status: 'ok', timestamp: new Date().toISOString() }))
+app.post('/api/auth/qr/create', async (_request, reply) => reply.send({ token: createQrSession(), expiresIn: qrSessionLifetimeMs }))
+app.post('/api/auth/qr/approve', getSessionTokens)
+app.post('/api/auth/qr/status', readQrSession)
+app.post('/api/auth/session', establishApiSession)
+app.post('/api/auth/signout', async (_request, reply) => {
+  reply.header('Set-Cookie', 'khtalk_access_token=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax')
+  return reply.code(204).send()
+})
 
 app.post('/api/servers', { preHandler: authenticate }, async (request, reply) => {
   const body = createServerSchema.safeParse(request.body)

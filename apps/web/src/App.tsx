@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Bell, ChevronDown, ChevronLeft, ChevronRight, Compass,
   Download, FileText, Gift, Hash, Headphones, Menu, Mic,
@@ -9,8 +9,14 @@ import {
 import type { User } from '@supabase/supabase-js'
 import { useChatStore } from './stores/useChatStore'
 import { AuthPage } from './components/AuthPage'
-import { getSupabaseClient, mapSupabaseUserToProfile } from './lib/supabase'
+import { approveQrSession, clearApiSession, getQrTokenFromLocation, getSupabaseClient, mapSupabaseUserToProfile, syncApiSession } from './lib/supabase'
 import { UserStatus } from './types/auth'
+import {
+  Community, Role, DiscordTemplate,
+  DEFAULT_EVERYONE_PERMISSIONS, DEFAULT_ADMIN_PERMISSIONS, DEFAULT_MOD_PERMISSIONS
+} from './types/community'
+import { CreateCommunityModal } from './components/CreateCommunityModal'
+import { CommunitySettingsModal } from './components/CommunitySettingsModal'
 
 type Message = {
   id: number
@@ -18,18 +24,13 @@ type Message = {
   time: string
   avatar: string
   color: string
+  avatarUrl?: string
   text?: string
   attachment?: string
   reactions?: string[]
 }
 
-type Community = {
-  id: string
-  name: string
-  slug: string
-  iconUrl: string
-  backgroundUrl?: string | null
-}
+
 
 function BrandMark({ small = false }: { small?: boolean }) {
   return <div className={`brand-mark ${small ? 'small' : ''}`} aria-label="KHTALK">K</div>
@@ -51,43 +52,88 @@ function App() {
   } = useChatStore()
 
   const [draft, setDraft] = useState('')
-  const [sentMessages, setSentMessages] = useState<Message[]>([])
   const [customMenu, setCustomMenu] = useState<{ x: number; y: number } | null>(null)
   const [channelMenu, setChannelMenu] = useState<{ name: string; x: number; y: number } | null>(null)
   const [channelToDelete, setChannelToDelete] = useState<string | null>(null)
   const [showChannelModal, setShowChannelModal] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [privateChannels, setPrivateChannels] = useState<string[]>([])
-  const [privateVoiceChannels, setPrivateVoiceChannels] = useState<string[]>([])
+  const [showServerDropdown, setShowServerDropdown] = useState(false)
   const [channelName, setChannelName] = useState('')
   const [channelType, setChannelType] = useState<'text' | 'voice'>('text')
-  const [removedChannels, setRemovedChannels] = useState<string[]>([])
-  const [community, setCommunity] = useState<Community | null>(null)
-  const [showCommunityModal, setShowCommunityModal] = useState(false)
-  const [communityName, setCommunityName] = useState('')
-  const [communityError, setCommunityError] = useState<string | null>(null)
-  const [communityLoading, setCommunityLoading] = useState(false)
-  const [showCommunitySettings, setShowCommunitySettings] = useState(false)
-  const [communityIconUrl, setCommunityIconUrl] = useState('')
-  const [communityBackgroundUrl, setCommunityBackgroundUrl] = useState('')
-  const [communitySettingsError, setCommunitySettingsError] = useState<string | null>(null)
-  const [communitySettingsSaving, setCommunitySettingsSaving] = useState(false)
 
+  // Communities State & Persistence (Clean Real Data only, no fake mock users/communities)
+  const [communities, setCommunities] = useState<Community[]>(() => {
+    localStorage.removeItem('khtalk_discord_communities_v2')
+    const saved = localStorage.getItem('khtalk_communities_real_v3')
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed)) {
+          return parsed.filter((c) => c.id !== 'khtalk_community_default')
+        }
+      } catch {}
+    }
+    return []
+  })
+
+  const [activeCommunityId, setActiveCommunityId] = useState<string>(() => {
+    const saved = localStorage.getItem('khtalk_active_community_id_v3')
+    return saved && saved !== 'khtalk_community_default' ? saved : ''
+  })
+
+  // Messages per Community & Channel (Zero fake messages)
+  const [messagesByChannel, setMessagesByChannel] = useState<Record<string, Message[]>>(() => {
+    try {
+      const saved = localStorage.getItem('khtalk_channel_messages_real_v3')
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })
+
+  const [showCommunityModal, setShowCommunityModal] = useState(false)
+  const [showCommunitySettings, setShowCommunitySettings] = useState(false)
+
+  // Save communities to localStorage
+  useEffect(() => {
+    localStorage.setItem('khtalk_communities_real_v3', JSON.stringify(communities))
+  }, [communities])
+
+  // Save active community ID
+  useEffect(() => {
+    localStorage.setItem('khtalk_active_community_id_v3', activeCommunityId)
+  }, [activeCommunityId])
+
+  // Save channel messages to localStorage
+  useEffect(() => {
+    localStorage.setItem('khtalk_channel_messages_real_v3', JSON.stringify(messagesByChannel))
+  }, [messagesByChannel])
+
+  // Supabase Auth listener
   useEffect(() => {
     const supabase = getSupabaseClient()
     if (!supabase) return
+    const scannedQrToken = getQrTokenFromLocation()
 
-    // Verify existing session
+    async function approveQrForSession(session: { access_token: string; refresh_token: string }) {
+      if (!scannedQrToken) return
+      const approved = await approveQrSession(scannedQrToken, session.access_token, session.refresh_token)
+      if (approved) window.history.replaceState({}, '', window.location.pathname)
+    }
+
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (!error && session?.user) {
+        void syncApiSession(session.access_token)
+        void approveQrForSession(session)
         setCurrentUser(mapSupabaseUserToProfile(session.user))
       }
     })
 
-    // Listen for auth events (sign in, sign out, user updated)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
+        void syncApiSession(session.access_token)
+        void approveQrForSession(session)
         setCurrentUser(mapSupabaseUserToProfile(session.user))
       } else {
         setCurrentUser(null)
@@ -99,33 +145,77 @@ function App() {
     }
   }, [setCurrentUser])
 
+  // Current active community
+  const community = communities.find((c) => c.id === activeCommunityId) || communities[0] || null
+
+  // Ensure active community ID is valid
+  useEffect(() => {
+    if (communities.length > 0 && (!activeCommunityId || !communities.some((c) => c.id === activeCommunityId))) {
+      setActiveCommunityId(communities[0].id)
+      const firstText = communities[0].channels.find((ch) => ch.type === 'text')
+      if (firstText) setActiveChannel(firstText.name)
+    }
+  }, [communities, activeCommunityId, setActiveChannel])
+
+  // Ensure current real user is in active community members list
+  useEffect(() => {
+    if (!currentUser || !community) return
+    const isMember = community.members.some((m) => m.id === currentUser.id || m.username === currentUser.username)
+    if (!isMember) {
+      const userMember = {
+        id: currentUser.id,
+        name: currentUser.displayName,
+        username: currentUser.username,
+        avatar: currentUser.avatar,
+        color: currentUser.color,
+        avatarUrl: currentUser.avatarUrl,
+        status: currentUser.status,
+        roleIds: ['role_admin', 'everyone']
+      }
+      setCommunities((prev) =>
+        prev.map((c) =>
+          c.id === community.id
+            ? { ...c, members: [userMember, ...c.members.filter((m) => m.id !== currentUser.id && m.username !== currentUser.username)] }
+            : c
+        )
+      )
+    }
+  }, [currentUser, community])
+
   async function handleSignOut() {
     const supabase = getSupabaseClient()
     if (supabase) {
       await supabase.auth.signOut()
     }
+    await clearApiSession()
     setCurrentUser(null)
     setShowUserMenu(false)
   }
 
+  // Active channel messages
+  const currentChannelKey = community ? `${community.id}_${activeChannel}` : activeChannel
+  const currentMessages = messagesByChannel[currentChannelKey] || []
 
-  const allMessages = sentMessages
   function sendMessage() {
     const text = draft.trim()
     if (!text) return
     if (!currentUser) return
+    if (!community) return
 
-    setSentMessages((current) => [
-      ...current,
-      {
-        id: Date.now(),
-        name: currentUser.displayName,
-        time: 'Just now',
-        avatar: currentUser.avatar,
-        color: currentUser.color,
-        text
-      }
-    ])
+    const newMsg: Message = {
+      id: Date.now(),
+      name: currentUser.displayName,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      avatar: currentUser.avatar,
+      color: currentUser.color,
+      avatarUrl: currentUser.avatarUrl,
+      text
+    }
+
+    setMessagesByChannel((prev) => ({
+      ...prev,
+      [currentChannelKey]: [...(prev[currentChannelKey] || []), newMsg]
+    }))
     setDraft('')
   }
 
@@ -135,126 +225,115 @@ function App() {
     setShowChannelModal(true)
   }
 
-  function communityIcon(name: string) {
-    const initial = name.trim().charAt(0).toUpperCase() || 'K'
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" rx="32" fill="#1b8bff"/><path d="M38 31h17v27l25-27h22L75 63l28 34H81L55 69v28H38z" fill="#fff"/><circle cx="99" cy="29" r="15" fill="#ff7f6e"/><text x="99" y="35" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#10213d">${initial}</text></svg>`
-    return `data:image/svg+xml,${encodeURIComponent(svg)}`
-  }
-
-  function chooseCommunityImage(event: React.ChangeEvent<HTMLInputElement>, target: 'icon' | 'background') {
-    const file = event.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      setCommunitySettingsError('Choose an image file.')
-      return
-    }
-    if (file.size > 3 * 1024 * 1024) {
-      setCommunitySettingsError('Community images must be smaller than 3 MB.')
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => target === 'icon' ? setCommunityIconUrl(String(reader.result)) : setCommunityBackgroundUrl(String(reader.result))
-    reader.readAsDataURL(file)
-  }
-
-  function chooseCreateCommunityImage(event: React.ChangeEvent<HTMLInputElement>, target: 'icon' | 'background') {
-    const file = event.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      setCommunityError('Choose an image file.')
-      return
-    }
-    if (file.size > 3 * 1024 * 1024) {
-      setCommunityError('Community images must be smaller than 3 MB.')
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => target === 'icon' ? setCommunityIconUrl(String(reader.result)) : setCommunityBackgroundUrl(String(reader.result))
-    reader.readAsDataURL(file)
-  }
-
-  function openCommunitySettings() {
-    if (!community) return
-    setCommunityIconUrl(community.iconUrl)
-    setCommunityBackgroundUrl(community.backgroundUrl || '')
-    setCommunitySettingsError(null)
-    setCustomMenu(null)
-    setShowCommunitySettings(true)
-  }
-
-  async function saveCommunitySettings(name: string) {
-    if (!community || !currentUser) return
-    setCommunitySettingsSaving(true)
-    setCommunitySettingsError(null)
-    const supabase = getSupabaseClient()
-    const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } }
-    const apiUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:4000'
-    try {
-      const response = await fetch(`${apiUrl}/api/servers/${community.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-auth-subject': session?.user.id || currentUser.id,
-          'x-auth-email': currentUser.email,
-          'x-auth-display-name': currentUser.displayName,
-          'x-auth-username': currentUser.username
-        },
-        body: JSON.stringify({ name, iconUrl: communityIconUrl, backgroundUrl: communityBackgroundUrl || undefined })
-      })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Could not update community.')
-      setCommunity(result)
-      setShowCommunitySettings(false)
-    } catch (error) {
-      setCommunitySettingsError(error instanceof TypeError && error.message === 'Failed to fetch'
-        ? `Community API is unavailable at ${apiUrl}. Check VITE_API_URL and make sure the API is running.`
-        : error instanceof Error ? error.message : 'Could not update community.')
-    } finally {
-      setCommunitySettingsSaving(false)
-    }
-  }
-
-  async function createCommunity() {
-    const name = communityName.trim()
-    if (!name || !currentUser) return
-    setCommunityLoading(true)
-    setCommunityError(null)
+  // Create a new Community from Discord Template
+  function handleCreateCommunity({
+    name,
+    iconUrl,
+    template,
+    audience
+  }: {
+    name: string
+    iconUrl?: string
+    template: DiscordTemplate
+    audience: 'friends' | 'club' | 'general'
+  }) {
+    if (!currentUser) return
+    const newId = `server_${Date.now()}`
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-    const supabase = getSupabaseClient()
-    const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } }
-    const apiUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:4000'
 
-    try {
-      const response = await fetch(`${apiUrl}/api/servers`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-auth-subject': session?.user.id || currentUser.id,
-          'x-auth-email': currentUser.email,
-          'x-auth-display-name': currentUser.displayName,
-          'x-auth-username': currentUser.username
-        },
-        body: JSON.stringify({ name, slug, iconUrl: communityIconUrl || communityIcon(name), backgroundUrl: communityBackgroundUrl || undefined })
-      })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Could not create community.')
-      setCommunity(result)
-      setCommunityName('')
-      setShowCommunityModal(false)
-    } catch (error) {
-      setCommunityError(error instanceof TypeError && error.message === 'Failed to fetch'
-        ? `Community API is unavailable at ${apiUrl}. Start the API with "npm run dev:api" or set VITE_API_URL to your deployed API URL.`
-        : error instanceof Error ? error.message : 'Could not connect to the community API.')
-    } finally {
-      setCommunityLoading(false)
+    // Create roles from template
+    const templateRoles: Role[] = [
+      {
+        id: 'everyone',
+        name: '@everyone',
+        color: '#99aab5',
+        hoist: false,
+        mentionable: false,
+        position: 0,
+        permissions: DEFAULT_EVERYONE_PERMISSIONS
+      },
+      ...template.roles.map((r, index) => ({
+        id: `role_${index}_${Date.now()}`,
+        name: r.name,
+        color: r.color,
+        hoist: r.hoist,
+        mentionable: true,
+        position: index + 1,
+        permissions: index === 0 ? DEFAULT_ADMIN_PERMISSIONS : DEFAULT_MOD_PERMISSIONS
+      }))
+    ]
+
+    // Create channels from template
+    const templateChannels = template.channels.map((c, index) => ({
+      id: `ch_${index}_${Date.now()}`,
+      name: c.name,
+      type: c.type,
+      category: c.category || (c.type === 'voice' ? 'VOICE CHANNELS' : 'TEXT CHANNELS')
+    }))
+
+    // Add currentUser as Admin/Owner member — no fake/seeded users
+    const newMembers = [
+      {
+        id: currentUser.id,
+        name: currentUser.displayName,
+        username: currentUser.username,
+        avatar: currentUser.avatar,
+        color: currentUser.color,
+        avatarUrl: currentUser.avatarUrl,
+        status: currentUser.status,
+        roleIds: [templateRoles[1]?.id || 'role_admin', 'everyone']
+      }
+    ]
+
+    const newCommunity: Community = {
+      id: newId,
+      name,
+      slug,
+      iconUrl,
+      backgroundUrl: null,
+      ownerId: currentUser.id,
+      roles: templateRoles,
+      channels: templateChannels,
+      members: newMembers
+    }
+
+    setCommunities((prev) => [...prev, newCommunity])
+    setActiveCommunityId(newId)
+    setActiveChannel(templateChannels[0]?.name || 'general')
+    setShowCommunityModal(false)
+  }
+
+  // Update community (from Settings)
+  function handleUpdateCommunity(updated: Community) {
+    setCommunities((prev) =>
+      prev.map((c) => (c.id === updated.id ? updated : c))
+    )
+  }
+
+  // Delete community
+  function handleDeleteCommunity(communityId: string) {
+    const remaining = communities.filter((c) => c.id !== communityId)
+    setCommunities(remaining)
+    if (remaining.length === 0) {
+      setActiveCommunityId('')
+    } else {
+      setActiveCommunityId(remaining[0].id)
     }
   }
 
   function createPrivateChannel() {
     const name = channelName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-')
-    if (!name) return
-    if (channelType === 'voice') setPrivateVoiceChannels((current) => [...current, name])
-    else setPrivateChannels((current) => [...current, name])
+    if (!name || !community) return
+    const newChan = {
+      id: `chan_${Date.now()}`,
+      name,
+      type: channelType,
+      category: channelType === 'voice' ? 'VOICE CHANNELS' : 'TEXT CHANNELS'
+    }
+    handleUpdateCommunity({
+      ...community,
+      channels: [...community.channels, newChan]
+    })
     setActiveChannel(name)
     setChannelName('')
     setShowChannelModal(false)
@@ -266,9 +345,13 @@ function App() {
   }
 
   function deleteChannel() {
-    if (!channelToDelete) return
-    setRemovedChannels((current) => [...current, channelToDelete])
-    if (activeChannel === channelToDelete) setActiveChannel('general')
+    if (!channelToDelete || !community) return
+    const updatedChannels = community.channels.filter((c) => c.name !== channelToDelete)
+    handleUpdateCommunity({ ...community, channels: updatedChannels })
+    if (activeChannel === channelToDelete) {
+      const remainingText = updatedChannels.find((c) => c.type === 'text')
+      setActiveChannel(remainingText?.name || 'general')
+    }
     setChannelToDelete(null)
   }
 
@@ -277,12 +360,52 @@ function App() {
     return <AuthPage />
   }
 
-  const memberList = [{
-    name: currentUser.displayName,
-    status: currentUser.status,
-    avatar: currentUser.avatar,
-    color: currentUser.color
-  }]
+  // If user has no communities yet, show empty state
+  if (communities.length === 0) {
+    return (
+      <div className="app-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '24px' }}>
+        <div className="brand-mark" style={{ width: 72, height: 72, fontSize: 36 }} aria-label="KHTALK">K</div>
+        <div style={{ textAlign: 'center' }}>
+          <h1 style={{ color: '#edf5ff', fontSize: 28, margin: '0 0 8px' }}>Welcome to KHTALK</h1>
+          <p style={{ color: '#8ba4c0', margin: '0 0 32px', maxWidth: 380 }}>
+            You haven't joined any communities yet. Create one to get started!
+          </p>
+          <button
+            className="khtalk-btn-primary"
+            style={{ padding: '12px 28px', fontSize: 16, borderRadius: 10 }}
+            onClick={() => setShowCommunityModal(true)}
+          >
+            + Create a Community
+          </button>
+        </div>
+
+        {showCommunityModal && (
+          <CreateCommunityModal
+            userDisplayName={currentUser.displayName}
+            onClose={() => setShowCommunityModal(false)}
+            onCreate={handleCreateCommunity}
+          />
+        )}
+      </div>
+    )
+  }
+
+  // Get color for message author
+  function getAuthorColor(authorName: string): string {
+    if (!community) return '#edf5ff'
+    const member = community.members.find(
+      (m) => m.name.toLowerCase() === authorName.toLowerCase()
+    )
+    if (member) {
+      const memberRoles = community.roles.filter((r) => member.roleIds.includes(r.id))
+      const coloredRole = memberRoles.find((r) => r.color && r.id !== 'everyone')
+      if (coloredRole) return coloredRole.color
+    }
+    return '#edf5ff'
+  }
+
+  const textChannels = community ? community.channels.filter((c) => c.type === 'text') : []
+  const voiceChannels = community ? community.channels.filter((c) => c.type === 'voice') : []
 
   return (
     <div
@@ -293,6 +416,7 @@ function App() {
         setCustomMenu(null)
         setChannelMenu(null)
         setShowUserMenu(false)
+        setShowServerDropdown(false)
       }}
     >
       <header className="mobile-topbar">
@@ -301,7 +425,7 @@ function App() {
         </button>
         <BrandMark small />
         <strong>KHTALK</strong>
-        <button className="icon-button mobile-create-community" onClick={() => { setCommunityError(null); setCommunityIconUrl(''); setCommunityBackgroundUrl(''); setShowCommunityModal(true) }} aria-label="Create community">
+        <button className="icon-button mobile-create-community" onClick={() => setShowCommunityModal(true)} aria-label="Create server">
           <Plus size={19} />
         </button>
         <button className="icon-button" onClick={() => setMobilePanel('members')} aria-label="Open members">
@@ -309,69 +433,164 @@ function App() {
         </button>
       </header>
 
+      {/* DISCORD SERVER RAIL */}
       <aside className="server-rail">
         <BrandMark />
         <div className="rail-divider" />
-        {community && (
-          <button
-            className="server-icon active"
-            aria-label={community.name}
-            onContextMenu={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              setCustomMenu({ x: event.clientX, y: event.clientY })
-            }}
-          >
-            <img src={community.iconUrl} alt="" />
-          </button>
-        )}
-        <button className="server-icon add" aria-label="Create community" onClick={() => { setCommunityError(null); setCommunityIconUrl(''); setCommunityBackgroundUrl(''); setShowCommunityModal(true) }}>
+
+        {communities.map((c) => {
+          const isActive = c.id === community.id
+          return (
+            <div key={c.id} className="server-rail-item">
+              <span className={`server-rail-pill ${isActive ? 'active' : ''}`} />
+              <button
+                className={`server-icon ${isActive ? 'active' : ''}`}
+                aria-label={c.name}
+                onClick={() => {
+                  setActiveCommunityId(c.id)
+                  const firstText = c.channels.find((ch) => ch.type === 'text')
+                  if (firstText) setActiveChannel(firstText.name)
+                }}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setActiveCommunityId(c.id)
+                  setCustomMenu({ x: event.clientX, y: event.clientY })
+                }}
+              >
+                {c.iconUrl ? (
+                  <img src={c.iconUrl} alt={c.name} className="server-rail-img" />
+                ) : (
+                  <span className="server-letter">{c.name.charAt(0).toUpperCase()}</span>
+                )}
+              </button>
+            </div>
+          )
+        })}
+
+        <button
+          className="server-icon add"
+          aria-label="Add a Community"
+          title="Add a Community"
+          onClick={() => setShowCommunityModal(true)}
+        >
           <Plus size={20} />
         </button>
         <div className="rail-spacer" />
         <button className="server-icon" aria-label="Discover"><Compass size={20} /></button>
       </aside>
 
+      {/* CHANNEL SIDEBAR */}
       <aside className={`channel-sidebar ${mobilePanel === 'channels' ? 'mobile-open' : ''}`}>
-        <div className="server-heading">
-          {community && <><span>{community.name}</span><ChevronDown size={16} /></>}
-        </div>
-        <div className="channel-scroll">
-          {community && <div className="channel-category">
-            <span>TEXT CHANNELS</span>
-            <button aria-label="Create private channel" onClick={() => requestPrivateChannel('text')}>
-              <Plus size={14} />
-            </button>
-          </div>}
-          {community && ['general', ...privateChannels]
-            .filter((channel) => !removedChannels.includes(channel))
-            .map((channel) => (
-              <ChannelRow
-                key={channel}
-                name={channel}
-                active={activeChannel === channel}
-                onContextMenu={(event) => {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  setChannelMenu({ name: channel, x: event.clientX, y: event.clientY })
-                }}
+        {/* DISCORD SERVER HEADING & DROPDOWN */}
+        <div style={{ position: 'relative' }}>
+          <div
+            className="server-heading clickable"
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowServerDropdown(!showServerDropdown)
+            }}
+          >
+            <div className="server-heading-content">
+              {community?.iconUrl && (
+                <img src={community.iconUrl} alt="" className="server-mini-icon" />
+              )}
+              <span>{community ? community.name : 'Select a Community'}</span>
+            </div>
+            <ChevronDown size={16} className={`dropdown-chevron ${showServerDropdown ? 'open' : ''}`} />
+          </div>
+
+          {showServerDropdown && community && (
+            <div className="discord-server-dropdown" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                className="discord-dropdown-item primary"
                 onClick={() => {
-                  setActiveChannel(channel)
-                  setMobilePanel(null)
+                  setShowServerDropdown(false)
+                  setShowCommunitySettings(true)
                 }}
-              />
-            ))}
-          {community && <div className="channel-category space-top">
-            <span>VOICE CHANNELS</span>
-            <button aria-label="Create private voice channel" onClick={() => requestPrivateChannel('voice')}>
+              >
+                <span>Community Settings</span>
+                <Settings size={15} />
+              </button>
+
+              <button
+                type="button"
+                className="discord-dropdown-item"
+                onClick={() => {
+                  setShowServerDropdown(false)
+                  requestPrivateChannel('text')
+                }}
+              >
+                <span>Create Channel</span>
+                <Plus size={16} />
+              </button>
+
+              <button
+                type="button"
+                className="discord-dropdown-item"
+                onClick={() => {
+                  setShowServerDropdown(false)
+                  requestPrivateChannel('voice')
+                }}
+              >
+                <span>Create Voice Channel</span>
+                <Volume2 size={16} />
+              </button>
+
+              <div className="discord-dropdown-divider" />
+
+              <button
+                type="button"
+                className="discord-dropdown-item danger"
+                onClick={() => {
+                  setShowServerDropdown(false)
+                  handleDeleteCommunity(community.id)
+                }}
+              >
+                <span>Delete Community</span>
+                <Trash2 size={15} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="channel-scroll">
+          {/* TEXT CHANNELS */}
+          <div className="channel-category">
+            <span>TEXT CHANNELS</span>
+            <button aria-label="Create text channel" onClick={() => requestPrivateChannel('text')}>
               <Plus size={14} />
             </button>
-          </div>}
-          {community && ['General', ...privateVoiceChannels].map((channel) => (
-            <div className="voice-row" key={channel}>
+          </div>
+          {textChannels.map((channel) => (
+            <ChannelRow
+              key={channel.id}
+              name={channel.name}
+              active={activeChannel === channel.name}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                setChannelMenu({ name: channel.name, x: event.clientX, y: event.clientY })
+              }}
+              onClick={() => {
+                setActiveChannel(channel.name)
+                setMobilePanel(null)
+              }}
+            />
+          ))}
+
+          {/* VOICE CHANNELS */}
+          <div className="channel-category space-top">
+            <span>VOICE CHANNELS</span>
+            <button aria-label="Create voice channel" onClick={() => requestPrivateChannel('voice')}>
+              <Plus size={14} />
+            </button>
+          </div>
+          {voiceChannels.map((channel) => (
+            <div className="voice-row" key={channel.id}>
               <Volume2 size={15} />
-              <span>{channel}</span>
-              {privateVoiceChannels.includes(channel) && <LockKeyhole size={12} className="private-icon" />}
+              <span>{channel.name}</span>
               <small>00</small>
             </div>
           ))}
@@ -449,12 +668,14 @@ function App() {
         </div>
       </aside>
 
+      {/* CHAT PANEL */}
       <main className="chat-panel">
-        <div className={`chat-header ${!community ? 'empty-chat-header' : ''}`}>
+        <div className="chat-header">
           <div className="channel-title">
-            {community && <Hash size={21} />}
+            <Hash size={21} />
             <div>
-              {community && <><h1>{activeChannel}</h1><span>Share ideas, updates, and good energy.</span></>}
+              <h1>{activeChannel}</h1>
+              <span>Share ideas, updates, and good energy.</span>
             </div>
           </div>
           <div className="header-actions">
@@ -472,22 +693,22 @@ function App() {
           </div>
         </div>
 
-        <div className={`message-area ${!community ? 'empty-community-main' : ''}`}>
-          {community ? (
-            <>
+        <div className="message-area">
           <div className="welcome-block">
             <div className="welcome-icon"><Hash size={26} /></div>
             <h2>Welcome to #{activeChannel}</h2>
             <p>This is the beginning of the #{activeChannel} channel.</p>
           </div>
-          {allMessages.map((message) => (
-            <MessageRow key={message.id} message={message} />
+          {currentMessages.map((message) => (
+            <MessageRow
+              key={message.id}
+              message={message}
+              authorColor={getAuthorColor(message.name)}
+            />
           ))}
-            </>
-          ) : null}
         </div>
 
-        {community && <div className="composer-wrap">
+        <div className="composer-wrap">
           <div className="composer">
             <button className="composer-action" aria-label="Add attachment"><Plus size={20} /></button>
             <input
@@ -502,29 +723,31 @@ function App() {
             <button className="send-button" onClick={sendMessage} aria-label="Send message"><Send size={17} /></button>
           </div>
           <div className="composer-hint">Press <kbd>Enter</kbd> to send <span>•</span> <kbd>Shift + Enter</kbd> for a new line</div>
-        </div>}
+        </div>
       </main>
 
-      <aside className={`members-panel ${mobilePanel === 'members' ? 'mobile-open' : ''}`}>
-        <div className="mobile-panel-header">
-          <strong>Members</strong>
-          <button className="icon-button" onClick={() => setMobilePanel(null)} aria-label="Close members"><X size={18} /></button>
-        </div>
-          {community && <MemberGroup title="ONLINE" members={memberList} />}
-      </aside>
+      {/* DISCORD HOISTED MEMBERS SIDEBAR */}
+      <CommunityMembersSidebar
+        community={community}
+        mobilePanel={mobilePanel}
+        setMobilePanel={setMobilePanel}
+      />
 
       {mobilePanel && <button className="mobile-backdrop" onClick={() => setMobilePanel(null)} aria-label="Close menu" />}
-      {customMenu && (
+
+      {/* Context Menus */}
+      {customMenu && community && (
         <div className="server-context-menu" style={{ left: customMenu.x, top: customMenu.y }} onClick={(event) => event.stopPropagation()}>
-          <strong>{community?.name || 'Community'}</strong>
-          <button onClick={openCommunitySettings}>
-            <Pencil size={15} /> Edit community
+          <strong>{community.name}</strong>
+          <button onClick={() => { setCustomMenu(null); setShowCommunitySettings(true) }}>
+            <Settings size={15} /> Server Settings
           </button>
-            <button onClick={() => { setCommunity(null); setCustomMenu(null) }}>
-            <Trash2 size={15} /> Delete server
+          <button onClick={() => { setCustomMenu(null); handleDeleteCommunity(community.id) }}>
+            <Trash2 size={15} /> Delete Server
           </button>
         </div>
       )}
+
       {channelMenu && (
         <div className="server-context-menu" style={{ left: channelMenu.x, top: channelMenu.y }} onClick={(event) => event.stopPropagation()}>
           <strong>#{channelMenu.name}</strong>
@@ -533,6 +756,8 @@ function App() {
           </button>
         </div>
       )}
+
+      {/* Private Channel Modal */}
       {showChannelModal && (
         <PrivateChannelModal
           type={channelType}
@@ -543,36 +768,36 @@ function App() {
           onCreate={createPrivateChannel}
         />
       )}
+
+      {/* 100% Discord Create Community Modal */}
       {showCommunityModal && (
         <CreateCommunityModal
-          name={communityName}
-          iconUrl={communityIconUrl}
-          backgroundUrl={communityBackgroundUrl}
-          error={communityError}
-          loading={communityLoading}
-          setName={setCommunityName}
-          onIconChange={(event) => chooseCreateCommunityImage(event, 'icon')}
-          onBackgroundChange={(event) => chooseCreateCommunityImage(event, 'background')}
+          userDisplayName={currentUser.displayName}
           onClose={() => setShowCommunityModal(false)}
-          onCreate={createCommunity}
+          onCreate={handleCreateCommunity}
         />
       )}
+
+      {/* Full Discord Server Settings Modal with System Roles */}
       {showCommunitySettings && community && (
         <CommunitySettingsModal
-          name={community.name}
-          iconUrl={communityIconUrl}
-          backgroundUrl={communityBackgroundUrl}
-          error={communitySettingsError}
-          saving={communitySettingsSaving}
-          onIconChange={(event) => chooseCommunityImage(event, 'icon')}
-          onBackgroundChange={(event) => chooseCommunityImage(event, 'background')}
+          community={community}
           onClose={() => setShowCommunitySettings(false)}
-          onSave={saveCommunitySettings}
+          onUpdateCommunity={handleUpdateCommunity}
+          onDeleteCommunity={handleDeleteCommunity}
         />
       )}
+
+      {/* User Settings Page */}
       {showSettings && (
-        <SettingsPage user={currentUser} onClose={() => setShowSettings(false)} onUserUpdated={(user) => setCurrentUser(mapSupabaseUserToProfile(user))} />
+        <SettingsPage
+          user={currentUser}
+          onClose={() => setShowSettings(false)}
+          onUserUpdated={(user) => setCurrentUser(mapSupabaseUserToProfile(user))}
+        />
       )}
+
+      {/* Delete Channel Modal */}
       {channelToDelete && (
         <DeleteChannelModal
           name={channelToDelete}
@@ -607,13 +832,19 @@ function ChannelRow({
   )
 }
 
-function MessageRow({ message }: { message: Message }) {
+function MessageRow({
+  message,
+  authorColor
+}: {
+  message: Message
+  authorColor: string
+}) {
   return (
     <article className="message-row">
       <Avatar member={message} />
       <div className="message-content">
         <div className="message-meta">
-          <strong>{message.name}</strong>
+          <strong style={{ color: authorColor }}>{message.name}</strong>
           <time>{message.time}</time>
         </div>
         {message.text && (
@@ -649,31 +880,121 @@ function MessageRow({ message }: { message: Message }) {
   )
 }
 
-function MemberGroup({
-  title,
-  members,
-  offline = false
+// Authentic Discord Hoisted Member List
+function CommunityMembersSidebar({
+  community,
+  mobilePanel,
+  setMobilePanel
 }: {
-  title: string
-  members: { name: string; status: string; avatar: string; color: string }[]
-  offline?: boolean
+  community: Community | null
+  mobilePanel: string | null
+  setMobilePanel: (panel: any) => void
 }) {
+  if (!community) return null
+
+  // Hoisted roles sorted by position
+  const hoistedRoles = community.roles
+    .filter((r) => r.hoist && r.id !== 'everyone')
+    .sort((a, b) => a.position - b.position)
+
+  const assignedMemberIds = new Set<string>()
+
+  const roleGroups = hoistedRoles
+    .map((role) => {
+      const membersInRole = community.members.filter((m) => {
+        if (assignedMemberIds.has(m.id)) return false
+        if (m.status !== 'Offline' && m.roleIds.includes(role.id)) {
+          assignedMemberIds.add(m.id)
+          return true
+        }
+        return false
+      })
+      return {
+        role,
+        title: `${role.name.toUpperCase()} — ${membersInRole.length}`,
+        members: membersInRole
+      }
+    })
+    .filter((g) => g.members.length > 0)
+
+  // Remaining online members
+  const remainingOnline = community.members.filter(
+    (m) => !assignedMemberIds.has(m.id) && m.status !== 'Offline'
+  )
+
+  // Offline members
+  const offlineMembers = community.members.filter((m) => m.status === 'Offline')
+
   return (
-    <section className={`member-group ${offline ? 'offline' : ''}`}>
-      <h3>{title}</h3>
-      {members.map((member) => (
-        <div className="member-row" key={member.name}>
-          <div className="presence-wrap">
-            <Avatar member={member} size="small" />
-            {!offline && <span className="presence-dot" />}
-          </div>
-          <div>
-            <strong>{member.name}</strong>
-            <span>{member.status}</span>
-          </div>
-        </div>
+    <aside className={`members-panel ${mobilePanel === 'members' ? 'mobile-open' : ''}`}>
+      <div className="mobile-panel-header">
+        <strong>Members</strong>
+        <button className="icon-button" onClick={() => setMobilePanel(null)} aria-label="Close members">
+          <X size={18} />
+        </button>
+      </div>
+
+      {/* Hoisted Role Groups */}
+      {roleGroups.map((group) => (
+        <section className="member-group" key={group.role.id}>
+          <h3 style={{ color: group.role.color }}>{group.title}</h3>
+          {group.members.map((member) => (
+            <div className="member-row" key={member.id}>
+              <div className="presence-wrap">
+                <Avatar member={member} size="small" />
+                <span className={`presence-dot ${member.status.toLowerCase().replace(/\s+/g, '-')}`} />
+              </div>
+              <div>
+                <strong style={{ color: group.role.color }}>{member.name}</strong>
+                <span>@{member.username}</span>
+              </div>
+            </div>
+          ))}
+        </section>
       ))}
-    </section>
+
+      {/* Online (Unhoisted) Group */}
+      {remainingOnline.length > 0 && (
+        <section className="member-group">
+          <h3>ONLINE — {remainingOnline.length}</h3>
+          {remainingOnline.map((member) => {
+            const memberRole = community.roles.find(
+              (r) => member.roleIds.includes(r.id) && r.id !== 'everyone'
+            )
+            return (
+              <div className="member-row" key={member.id}>
+                <div className="presence-wrap">
+                  <Avatar member={member} size="small" />
+                  <span className={`presence-dot ${member.status.toLowerCase().replace(/\s+/g, '-')}`} />
+                </div>
+                <div>
+                  <strong style={{ color: memberRole?.color || '#edf5ff' }}>{member.name}</strong>
+                  <span>@{member.username}</span>
+                </div>
+              </div>
+            )
+          })}
+        </section>
+      )}
+
+      {/* Offline Group */}
+      {offlineMembers.length > 0 && (
+        <section className="member-group offline">
+          <h3>OFFLINE — {offlineMembers.length}</h3>
+          {offlineMembers.map((member) => (
+            <div className="member-row" key={member.id}>
+              <div className="presence-wrap">
+                <Avatar member={member} size="small" />
+              </div>
+              <div>
+                <strong>{member.name}</strong>
+                <span>Offline</span>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+    </aside>
   )
 }
 
@@ -697,8 +1018,8 @@ function PrivateChannelModal({
       <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="channel-title">
         <button className="dialog-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
         <div className="dialog-icon"><LockKeyhole size={21} /></div>
-        <h2 id="channel-title">Create a private channel</h2>
-        <p>Only members you invite will be able to see and use this channel.</p>
+        <h2 id="channel-title">Create a channel</h2>
+        <p>Create a place for your community to collaborate.</p>
         <div className="channel-type-tabs">
           <button className={type === 'text' ? 'selected' : ''} onClick={() => setType('text')}>
             <Hash size={15} /> Text
@@ -714,64 +1035,36 @@ function PrivateChannelModal({
             value={name}
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => event.key === 'Enter' && onCreate()}
-            placeholder={type === 'text' ? 'project-room' : 'team lounge'}
+            placeholder={type === 'text' ? 'new-channel' : 'Voice Lounge'}
           />
         </label>
-        <div className="privacy-note">
-          <LockKeyhole size={15} />
-          <span>Private by default · Owner permissions enabled</span>
-        </div>
         <button className="primary-button" disabled={!name.trim()} onClick={onCreate}>
-          Create {type} channel <ChevronRight size={16} />
+          Create channel <ChevronRight size={16} />
         </button>
       </section>
     </div>
   )
 }
 
-function CommunitySettingsModal({
+function DeleteChannelModal({
   name,
-  iconUrl,
-  backgroundUrl,
-  error,
-  saving,
-  onIconChange,
-  onBackgroundChange,
   onClose,
-  onSave
+  onDelete
 }: {
   name: string
-  iconUrl: string
-  backgroundUrl: string
-  error: string | null
-  saving: boolean
-  onIconChange: (event: React.ChangeEvent<HTMLInputElement>) => void
-  onBackgroundChange: (event: React.ChangeEvent<HTMLInputElement>) => void
   onClose: () => void
-  onSave: (name: string) => void
+  onDelete: () => void
 }) {
-  const [communityName, setCommunityName] = useState(name)
   return (
     <div className="modal-backdrop">
-      <section className="dialog community-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="community-settings-title">
+      <section className="dialog danger-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-channel-title">
         <button className="dialog-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        <div className="community-art community-art-preview" style={{ backgroundImage: `url(${iconUrl})` }} aria-hidden="true" />
-        <h2 id="community-settings-title">Customize community</h2>
-        <p>Choose the identity and background for this community.</p>
-        <label>Community name<input value={communityName} onChange={(event) => setCommunityName(event.target.value)} maxLength={80} /></label>
-        <label className="community-image-picker">Community icon
-          <span className="upload-button"><Pencil size={14} /> Change icon<input type="file" accept="image/*" onChange={onIconChange} /></span>
-          <small>PNG, JPG, or WEBP up to 3 MB</small>
-        </label>
-        <label className="community-image-picker">Community background
-          <span className="upload-button"><Palette size={14} /> {backgroundUrl ? 'Change background' : 'Choose background'}<input type="file" accept="image/*" onChange={onBackgroundChange} /></span>
-          <small>Used behind your channels and chat</small>
-        </label>
-        {backgroundUrl && <div className="community-background-preview" style={{ backgroundImage: `url(${backgroundUrl})` }} />}
-        {error && <div className="modal-error" role="alert">{error}</div>}
+        <div className="dialog-icon danger-icon"><Trash2 size={21} /></div>
+        <h2 id="delete-channel-title">Delete #{name}?</h2>
+        <p>This channel and its messages will be removed for everyone. This action cannot be undone.</p>
         <div className="dialog-actions">
           <button className="secondary-button" onClick={onClose}>Cancel</button>
-          <button className="primary-button profile-save-button" disabled={saving || !communityName.trim()} onClick={() => onSave(communityName.trim())}>{saving ? 'Saving...' : 'Save community'}</button>
+          <button className="danger-button" onClick={onDelete}>Delete channel</button>
         </div>
       </section>
     </div>
@@ -899,7 +1192,7 @@ function SettingsPage({
     if (!supabase || !factorId || verificationCode.length !== 6) return
     setSaving(true)
     clearFeedback()
-    const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({ factorId })
+    const { data, challenge, error: challengeError } = (await supabase.auth.mfa.challenge({ factorId })) as any
     if (challengeError) setError(challengeError.message)
     else {
       const { error: verifyError } = await supabase.auth.mfa.verify({ factorId, challengeId: challenge.id, code: verificationCode })
@@ -997,90 +1290,6 @@ function SettingsCard({ icon, title, description, children }: { icon: React.Reac
 function SettingsToggle({ title, description }: { title: string; description: string }) {
   const [enabled, setEnabled] = useState(true)
   return <button className="settings-toggle" onClick={() => setEnabled(!enabled)}><span><strong>{title}</strong><small>{description}</small></span><span className={`toggle-track ${enabled ? 'enabled' : ''}`}><span /></span></button>
-}
-
-function CreateCommunityModal({
-  name,
-  iconUrl,
-  backgroundUrl,
-  error,
-  loading,
-  setName,
-  onIconChange,
-  onBackgroundChange,
-  onClose,
-  onCreate
-}: {
-  name: string
-  iconUrl: string
-  backgroundUrl: string
-  error: string | null
-  loading: boolean
-  setName: (name: string) => void
-  onIconChange: (event: React.ChangeEvent<HTMLInputElement>) => void
-  onBackgroundChange: (event: React.ChangeEvent<HTMLInputElement>) => void
-  onClose: () => void
-  onCreate: () => void
-}) {
-  return (
-    <div className="modal-backdrop">
-      <section className="dialog community-dialog" role="dialog" aria-modal="true" aria-labelledby="community-title">
-        <button className="dialog-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        <div className="community-art community-art-preview" style={iconUrl ? { backgroundImage: `url(${iconUrl})` } : undefined} aria-hidden="true">{!iconUrl && <BrandMark small />}</div>
-        <h2 id="community-title">Create a community</h2>
-        <p>Build a place for your friends, team, or interest group.</p>
-        <label>
-          Community name
-          <input
-            autoFocus
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => event.key === 'Enter' && onCreate()}
-            placeholder="My awesome community"
-            maxLength={80}
-          />
-        </label>
-        <label className="community-image-picker">Community icon
-          <span className="upload-button"><Pencil size={14} /> {iconUrl ? 'Change icon' : 'Choose icon'}<input type="file" accept="image/*" onChange={onIconChange} /></span>
-          <small>PNG, JPG, or WEBP up to 3 MB</small>
-        </label>
-        <label className="community-image-picker">Community background
-          <span className="upload-button"><Palette size={14} /> {backgroundUrl ? 'Change background' : 'Choose background'}<input type="file" accept="image/*" onChange={onBackgroundChange} /></span>
-          <small>Used behind your channels and chat</small>
-        </label>
-        {backgroundUrl && <div className="community-background-preview" style={{ backgroundImage: `url(${backgroundUrl})` }} />}
-        {error && <div className="modal-error" role="alert">{error}</div>}
-        <button className="primary-button" disabled={loading || !name.trim()} onClick={onCreate}>
-          {loading ? 'Creating...' : 'Create community'} <ChevronRight size={16} />
-        </button>
-      </section>
-    </div>
-  )
-}
-
-function DeleteChannelModal({
-  name,
-  onClose,
-  onDelete
-}: {
-  name: string
-  onClose: () => void
-  onDelete: () => void
-}) {
-  return (
-    <div className="modal-backdrop">
-      <section className="dialog danger-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-channel-title">
-        <button className="dialog-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        <div className="dialog-icon danger-icon"><Trash2 size={21} /></div>
-        <h2 id="delete-channel-title">Delete #{name}?</h2>
-        <p>This channel and its messages will be removed for everyone. This action cannot be undone.</p>
-        <div className="dialog-actions">
-          <button className="secondary-button" onClick={onClose}>Cancel</button>
-          <button className="danger-button" onClick={onDelete}>Delete channel</button>
-        </div>
-      </section>
-    </div>
-  )
 }
 
 export default App
