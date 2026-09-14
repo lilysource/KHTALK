@@ -2214,6 +2214,84 @@
   animation: kh-fade-up 350ms cubic-bezier(0.2, 0, 0, 1) both;
 }
 
+/* Desktop and tablet auth motion: keep the wider layout alive without moving the form. */
+@media (min-width: 701px) {
+  .account-page-centered {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background-size: 140% 140%;
+    animation: kh-fade-in 500ms cubic-bezier(0.2, 0, 0, 1) both, auth-bg-sweep 18s ease-in-out 500ms infinite alternate;
+  }
+  .account-page-centered::before,
+  .account-page-centered::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    width: 420px;
+    height: 420px;
+    border: 1px solid rgba(66, 181, 255, .08);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .account-page-centered::before {
+    top: -220px;
+    left: 8%;
+    animation: auth-orbit 16s ease-in-out infinite;
+  }
+  .account-page-centered::after {
+    right: 4%;
+    bottom: -260px;
+    width: 520px;
+    height: 520px;
+    animation: auth-orbit 20s ease-in-out 2s infinite reverse;
+  }
+  .account-container { position: relative; z-index: 1; }
+  .account-brand-center .brand-mark {
+    animation: kh-icon-pop 700ms cubic-bezier(0.2, 0, 0, 1) 180ms both, auth-mark-float 5s ease-in-out 1s infinite;
+  }
+  .account-card {
+    animation: kh-modal-in 480ms cubic-bezier(0.2, 0, 0, 1) 140ms both, auth-card-breathe 7s ease-in-out 1.2s infinite;
+  }
+  .auth-qr-code-wrap {
+    animation: auth-qr-pulse 4s ease-in-out 1.8s infinite;
+  }
+  .footer-feature-item {
+    animation: kh-fade-up 500ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+  .footer-feature-item:nth-child(1) { animation-delay: 360ms; }
+  .footer-feature-item:nth-child(2) { animation-delay: 480ms; }
+}
+
+@media (min-width: 701px) and (max-width: 1100px) {
+  .account-page-centered { padding: 32px 28px; }
+  .account-container { max-width: 430px; }
+  .account-page-footer { margin-top: 20px; }
+  .footer-feature-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .footer-feature-item { min-height: 92px; }
+}
+
+@keyframes auth-bg-sweep {
+  from { background-position: 0% 15%; }
+  to { background-position: 100% 85%; }
+}
+@keyframes auth-orbit {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); opacity: .45; }
+  50% { transform: translate3d(34px, 24px, 0) rotate(18deg); opacity: 1; }
+}
+@keyframes auth-mark-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+@keyframes auth-card-breathe {
+  0%, 100% { box-shadow: 0 25px 80px rgba(0, 0, 0, .45); }
+  50% { box-shadow: 0 28px 88px rgba(0, 0, 0, .5), 0 0 30px rgba(22, 135, 255, .08); }
+}
+@keyframes auth-qr-pulse {
+  0%, 100% { box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
+  50% { box-shadow: 0 10px 30px rgba(0, 0, 0, .3), 0 0 22px rgba(66, 181, 255, .22); }
+}
+
 /* QR access panel on the sign-in and account creation forms */
 .auth-qr-panel {
   display: flex;
