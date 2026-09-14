@@ -28,6 +28,7 @@ type Message = {
   text?: string
   attachment?: string
   reactions?: string[]
+  replyTo?: { name: string; text: string }
 }
 
 
@@ -52,6 +53,7 @@ function App() {
   } = useChatStore()
 
   const [draft, setDraft] = useState('')
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null)
   const [customMenu, setCustomMenu] = useState<{ x: number; y: number } | null>(null)
   const [channelMenu, setChannelMenu] = useState<{ name: string; x: number; y: number } | null>(null)
   const [channelToDelete, setChannelToDelete] = useState<string | null>(null)
@@ -209,7 +211,8 @@ function App() {
       avatar: currentUser.avatar,
       color: currentUser.color,
       avatarUrl: currentUser.avatarUrl,
-      text
+      text,
+      replyTo: replyingTo ? { name: replyingTo.name, text: replyingTo.text || '' } : undefined
     }
 
     setMessagesByChannel((prev) => ({
@@ -217,6 +220,15 @@ function App() {
       [currentChannelKey]: [...(prev[currentChannelKey] || []), newMsg]
     }))
     setDraft('')
+    setReplyingTo(null)
+  }
+
+  function deleteMessage(messageId: number) {
+    setMessagesByChannel((prev) => ({
+      ...prev,
+      [currentChannelKey]: (prev[currentChannelKey] || []).filter((message) => message.id !== messageId)
+    }))
+    if (replyingTo?.id === messageId) setReplyingTo(null)
   }
 
   function requestPrivateChannel(type: 'text' | 'voice' = 'text') {
@@ -704,11 +716,24 @@ function App() {
               key={message.id}
               message={message}
               authorColor={getAuthorColor(message.name)}
+              onReply={() => setReplyingTo(message)}
+              onDelete={() => deleteMessage(message.id)}
             />
           ))}
         </div>
 
         <div className="composer-wrap">
+          {replyingTo && (
+            <div className="replying-banner">
+              <div>
+                Replying to <strong>{replyingTo.name}</strong>
+                <span>{replyingTo.text}</span>
+              </div>
+              <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply">
+                <X size={15} />
+              </button>
+            </div>
+          )}
           <div className="composer">
             <button className="composer-action" aria-label="Add attachment"><Plus size={20} /></button>
             <input
@@ -834,10 +859,14 @@ function ChannelRow({
 
 function MessageRow({
   message,
-  authorColor
+  authorColor,
+  onReply,
+  onDelete
 }: {
   message: Message
   authorColor: string
+  onReply: () => void
+  onDelete: () => void
 }) {
   return (
     <article className="message-row">
@@ -847,6 +876,11 @@ function MessageRow({
           <strong style={{ color: authorColor }}>{message.name}</strong>
           <time>{message.time}</time>
         </div>
+        {message.replyTo && (
+          <div className="message-reply-reference">
+            Replying to <strong>{message.replyTo.name}</strong>: {message.replyTo.text}
+          </div>
+        )}
         {message.text && (
           <p>
             {message.text.split('\n').map((line, index) => (
@@ -872,8 +906,8 @@ function MessageRow({
           </div>
         )}
         <div className="message-tools">
-          <button aria-label="Reply"><ChevronLeft size={14} /> Reply</button>
-          <button aria-label="More message actions"><MoreHorizontal size={15} /></button>
+          <button aria-label={`Reply to ${message.name}`} onClick={onReply}><ChevronLeft size={14} /> Reply</button>
+          <button aria-label={`Delete message from ${message.name}`} onClick={onDelete}><Trash2 size={14} /> Delete</button>
         </div>
       </div>
     </article>
